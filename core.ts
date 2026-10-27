@@ -1,7 +1,7 @@
 export const MAX_BYTES = 131072;
 export const bytes = (s: string) => new TextEncoder().encode(s).length;
 export function safePath(value: unknown, markdown = true): string {
-  if (typeof value !== 'string' || !value || value !== value.normalize('NFC') || bytes(value) > 800 || /[\\%:#?\x00-\x1f\x7f]/.test(value)) throw Error('Ruta no válida');
+  if (typeof value !== 'string' || !value || value !== value.normalize('NFC') || bytes(value) > 800 || (/[\\%:#?]/.test(value) || [...value].some(ch => ch.charCodeAt(0) <= 31 || ch.charCodeAt(0) === 127))) throw Error('Ruta no válida');
   const parts = value.split('/');
   if (parts.some(p => !p || p === '.' || p === '..' || p.startsWith('.') || /[<>"|*]/.test(p) || /[. ]$/.test(p) || p.trim() !== p || bytes(p) > 180 || /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i.test(p))) throw Error('Ruta no válida');
   if (markdown && !value.endsWith('.md')) throw Error('Solo Markdown .md');

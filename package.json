@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-inbox",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Create Markdown notes through a paired relay, Lite links or an advanced GitHub inbox.",
   "main": "index.js",
   "scripts": {
@@ -19,7 +19,7 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
-    "obsidian": "1.11.4",
+    "obsidian": "^1.14.4",
     "typescript": "^7.0.2"
   },
   "private": true,

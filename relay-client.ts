@@ -17,9 +17,9 @@ export async function receiveRelay(jobs:unknown,roots:string[],configDir:string,
    await persist();await ack(job.id,conflict?'conflict':'delivered');
   }
 }
-export function liteURI(vault:string,folder:string,title:string,content:string){
+export function liteURI(vault:string,folder:string,title:string,content:string,configDir='.obsidian'){
   const path=`${folder}/${title.normalize('NFC').replace(/\.md$/,'')}`;
-  parseJob(JSON.stringify({version:1,id:'lite',path:path+'.md',content}),[folder],'.obsidian');
+  parseJob(JSON.stringify({version:1,id:'lite',path:path+'.md',content}),[folder],configDir);
   if(title.includes('/')||title.includes('\\'))throw Error('Título inválido');
   const uri=`obsidian://new?vault=${encodeURIComponent(vault)}&file=${encodeURIComponent(path)}&content=${encodeURIComponent(content)}`;
   if(uri.length>8000)throw Error('Enlace demasiado largo para Lite; usa relay o guarda un archivo Markdown.');return uri;

@@ -1,4 +1,4 @@
-import {App, Modal, FuzzySuggestModal, TFolder, TFile, Setting, SecretComponent, Notice} from 'obsidian';
+import {App, Modal, FuzzySuggestModal, TFolder, Setting, SecretComponent, Notice} from 'obsidian';
 import {openInboxNote} from './navigation';
 import type Inbox from './main';
 import {allowed,safePath,secretId} from './core';
@@ -48,7 +48,7 @@ export class SetupModal extends Modal {
         el.createEl('p',{text:'Sin cuentas ni servidor. Genera un enlace para una nota corta y ábrelo en el dispositivo con Obsidian. Lite requiere un toque y no ofrece recibo remoto.'});
         new Setting(el).setName('Título').addText(t=>t.setValue(this.liteTitle).onChange(v=>this.liteTitle=v));
         const area=el.createEl('textarea');area.value=this.liteContent;area.setAttribute('aria-label','Contenido de la nota Lite');area.oninput=()=>this.liteContent=area.value;
-        new Setting(el).addButton(b=>b.setButtonText('Generar enlace').onClick(()=>{try{const href=liteURI(this.app.vault.getName(),this.plugin.settings.defaultFolder,this.liteTitle,this.liteContent);el.createEl('a',{text:'Abrir en Obsidian',href});}catch(e){new Notice((e as Error).message);}}));
+        new Setting(el).addButton(b=>b.setButtonText('Generar enlace').onClick(()=>{try{const href=liteURI(this.app.vault.getName(),this.plugin.settings.defaultFolder,this.liteTitle,this.liteContent,this.app.vault.configDir);el.createEl('a',{text:'Abrir en Obsidian',href});}catch(e){new Notice((e as Error).message);}}));
       }else if(this.plugin.settings.transport==='relay'){
         el.createEl('p',{text:'Elige carpetas en el paso 2 antes de emparejar. Usa un relay HTTPS de confianza. El operador puede ver las notas en tránsito. El relay guarda temporalmente las solicitudes. La conexión puede revocarse en cualquier momento. No compartas el código de emparejamiento.'});
         new Setting(el).setName('Dirección del relay').addText(t=>t.setPlaceholder('https://tu-relay.example').setValue(this.plugin.settings.relay).onChange(async v=>{this.plugin.settings.relay=v.trim();this.pairCode='';await this.plugin.persist();}));
@@ -128,11 +128,4 @@ export class InstructionsModal extends Modal {
     new Setting(this.contentEl).addButton(b=>b.setButtonText('Copiar').setCta().onClick(async()=>{try{await navigator.clipboard.writeText(text);new Notice('Instrucción copiada.');}catch{area.focus();area.select();new Notice('Selecciona y copia el texto.');}}));
   }
   onClose(){this.contentEl.empty();}
-}
-
-class NotePicker extends FuzzySuggestModal<TFile> {
-  constructor(app:App,private choose:(path:string)=>void){super(app);this.setPlaceholder('Localiza la nota movida');}
-  getItems(){return this.app.vault.getMarkdownFiles();}
-  getItemText(file:TFile){return file.path;}
-  onChooseItem(file:TFile){this.choose(file.path);}
 }
