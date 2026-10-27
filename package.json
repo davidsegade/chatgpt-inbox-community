@@ -1,0 +1,39 @@
+{
+  "name": "chatgpt-inbox",
+  "version": "0.4.1",
+  "description": "Create Markdown notes through a paired relay, Lite links or an advanced GitHub inbox.",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc",
+    "test": "npm run build && node --test test.cjs integration.cjs source.test.cjs identity.test.cjs ui.test.cjs relay/relay.test.mjs",
+    "relay": "npm run build && node relay/server.mjs",
+    "verify": "npm run check && npm test",
+    "package:community": "node tools/package-community.mjs",
+    "test:postgres": "npm run build && node --test relay/postgres.test.mjs"
+  },
+  "keywords": [],
+  "author": "David Segade",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "obsidian": "1.11.4",
+    "typescript": "^7.0.2"
+  },
+  "private": true,
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "pg": "^8.16.3",
+    "zod": "^4.6.7"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "overrides": {
+    "obsidian@1.11.4": {
+      "moment": "2.31.0"
+    }
+  }
+}
