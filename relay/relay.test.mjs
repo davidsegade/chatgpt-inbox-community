@@ -130,6 +130,8 @@ test('Lite escapa Unicode, rechaza traversal, títulos con rutas y enlaces largo
  const uri=receiver.liteURI('Mi bóveda','Inbox','Árbol','# Hola & más');const parsed=new URL(uri);assert.equal(parsed.searchParams.get('content'),'# Hola & más');assert.equal(parsed.searchParams.get('file'),'Inbox/Árbol');assert.ok(!parsed.searchParams.has('overwrite'));
  for(const title of['../escape','folder/note','CON'])assert.throws(()=>receiver.liteURI('Vault','Inbox',title,'a'));
  assert.throws(()=>receiver.liteURI('Vault','Inbox','note','a'.repeat(9000)),/largo/);
+ assert.throws(()=>receiver.liteURI('Vault','.config-personalizada','nota','contenido','.config-personalizada'));
+ assert.ok(receiver.liteURI('Vault','Inbox','nota','contenido','.config-personalizada').startsWith('obsidian://'));
  for(const url of['http://public.example','https://user:pass@host','https://host/path'])assert.throws(()=>receiver.relayOrigin(url));
 });
 

@@ -1,6 +1,6 @@
 import {Plugin,PluginSettingTab,Setting,SecretComponent,Notice,requestUrl,TFile,TFolder} from 'obsidian';
 import {SetupModal,InboxModal,InstructionsModal,folderControls} from './ui';
-import {MAX_BYTES,bytes,safePath,parseEnvelope,deliver,Ledger,digest,randomToken,secretId,authorize} from './core';
+import {allowed,MAX_BYTES,bytes,safePath,parseEnvelope,deliver,Ledger,digest,randomToken,secretId,authorize} from './core';
 import {noteIdentity,stamp,stripIdentity,locateIdentity,recoverDelivery} from './identity';
 import {sourcePath,inboxPath} from './source';
 import {relayOrigin,receiveRelay} from './relay-client';
@@ -49,7 +49,8 @@ export default class Inbox extends Plugin {
     this.history.push({...entry,time:Date.now()});this.history=this.history.slice(-100);
   }
   async resolveNote(entry:HistoryEntry){
-    const file=await locateIdentity(entry,this.app.vault.getMarkdownFiles(),f=>this.app.vault.cachedRead(f));
+    const candidates=this.app.vault.getMarkdownFiles().filter(f=>allowed(f.path,this.permittedRoots(),this.app.vault.configDir));
+    const file=await locateIdentity(entry,candidates,f=>this.app.vault.cachedRead(f));
     entry.path=file.path;await this.persist();return file;
   }
   repoPath(){return sourcePath(this.settings.repository,this.settings.branch);}
@@ -174,7 +175,7 @@ export default class Inbox extends Plugin {
 class InboxSettings extends PluginSettingTab {
   constructor(app:Inbox['app'],private plugin:Inbox){super(app,plugin);}
   display(){const el=this.containerEl;el.empty();
-    new Setting(el).setName('ChatGPT Inbox Community').setHeading();
+    new Setting(el).setName('Configuración').setHeading();
     el.createEl('p',{text:'Relay o GitHub → bóveda actual. Solo crea notas nuevas. Obsidian debe estar abierto. Usa Configurar para elegir un modo.'});
     new Setting(el).setName('Empezar aquí').setDesc('Tres pasos: conexión, carpetas y recepción.').addButton(b=>b.setButtonText('Configurar paso a paso').setCta().onClick(()=>new SetupModal(this.plugin).open()));
     new Setting(el).setName('Tus notas recibidas').addButton(b=>b.setButtonText('Abrir bandeja').onClick(()=>new InboxModal(this.plugin).open())).addButton(b=>b.setButtonText('Instrucción para ChatGPT').onClick(()=>new InstructionsModal(this.plugin).open()));

@@ -1,7 +1,7 @@
 {
   "id": "chatgpt-inbox-community",
   "name": "ChatGPT Inbox Community",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "minAppVersion": "1.14.5",
   "description": "Create Markdown notes through a paired relay, Lite links or an advanced GitHub inbox.",
   "author": "David Segade",
