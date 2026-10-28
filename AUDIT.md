@@ -10,7 +10,7 @@ The packager verifies consistent 0.4.3 metadata, individual main.js/manifest.jso
 
 Vault enumeration is retained for the explicit folder picker. History recovery now walks only authorized subtrees, deduplicates overlapping roots and rechecks authorization before each content read. GitHub writes recheck current authorization after asynchronous folder creation. No existing note upload or broader permission is added.
 
-Physical macOS/iPhone acceptance of the new declarative layout and native copy interaction is not claimed by these automated tests. The hosted Community scorecard must be checked again only after a release is published; the currently visible scorecard still describes 0.4.2.
+Native desktop acceptance on Obsidian 1.14.5 used a new disposable vault on 28 October 2026: plugin 0.4.3 loaded; declarative settings and folder rows rendered correctly; searching “Destino por defecto” found the plugin setting; selecting the generated instruction focused the text area and selected the entire instruction without clipboard APIs. An initial nested-row layout failure was observed and corrected by using a real declarative group with independent folder definitions. This desktop check did not repeat live relay pairing/delivery. Physical iPhone acceptance of this candidate remains pending. The hosted Community scorecard must be checked again only after a release is published; the currently visible scorecard still describes 0.4.2.
 
 ---
 

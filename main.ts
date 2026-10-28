@@ -1,5 +1,5 @@
 import {Plugin,PluginSettingTab,SecretComponent,Notice,requestUrl,TFile,TFolder,SettingDefinitionItem} from 'obsidian';
-import {SetupModal,InboxModal,InstructionsModal,folderControls} from './ui';
+import {SetupModal,InboxModal,InstructionsModal,folderDefinitions} from './ui';
 import {allowed,MAX_BYTES,bytes,safePath,parseEnvelope,deliver,Ledger,digest,randomToken,secretId,authorize,isRecord,Job,inConfigDir} from './core';
 import {noteIdentity,stamp,stripIdentity,locateIdentity,recoverDelivery} from './identity';
 import {sourcePath,inboxPath} from './source';
@@ -232,7 +232,7 @@ class InboxSettings extends PluginSettingTab {
       {name:'Repositorio GitHub',visible:()=>p.settings.transport==='github',render:row=>{row.addText(t=>t.setPlaceholder('usuario/mi-inbox').setValue(p.settings.repository).onChange(async value=>{p.settings.repository=value.trim();await p.persist();}));}},
       {name:'Rama',visible:()=>p.settings.transport==='github',render:row=>{row.addText(t=>t.setValue(p.settings.branch).onChange(async value=>{p.settings.branch=value.trim();await p.persist();}));}},
       {name:'Token de solo lectura',desc:'Solo este repositorio, Contents: Read-only. Se configura por dispositivo.',visible:()=>p.settings.transport==='github',render:row=>{row.addComponent(c=>new SecretComponent(this.app,c).setValue(p.settings.secret).onChange(async value=>{p.settings.secret=value??'';await p.persist();}));}},
-      {name:'Carpetas permitidas',aliases:['Toda la bóveda actual','Destino por defecto','Añadir una carpeta','Carpeta nueva'],render:row=>{folderControls(row.controlEl,p,()=>this.update());}},
+      {type:'group',heading:'Carpetas permitidas',items:folderDefinitions(p,()=>this.update())},
       {name:'Intervalo (segundos)',desc:'Mínimo 60. Solo con Obsidian abierto y activo.',render:row=>{row.addText(t=>t.setValue(String(p.settings.interval)).onChange(async value=>{const n=Number(value);if(Number.isFinite(n)&&n>=60&&n<=86400){p.settings.interval=n;await p.persist();}}));}},
       ...p.issues.map(issue=>({name:issue})),
       {name:'Comprobar ahora',desc:p.status,render:row=>{row.addButton(b=>b.setButtonText('Comprobar').onClick(async()=>{await p.poll(true);this.update();}));}}

@@ -1,4 +1,4 @@
-import {App, Modal, FuzzySuggestModal, TFolder, Setting, SecretComponent, Notice} from 'obsidian';
+import {App, Modal, FuzzySuggestModal, TFolder, Setting, SecretComponent, Notice, SettingDefinitionRender} from 'obsidian';
 import {openInboxNote} from './navigation';
 import type Inbox from './main';
 import {allowed,safePath,secretId} from './core';
@@ -14,25 +14,32 @@ export class FolderPicker extends FuzzySuggestModal<TFolder> {
   onChooseItem(folder:TFolder){this.choose(folder.path);}
 }
 
-export function folderControls(el:HTMLElement,plugin:Inbox,changed:()=>void){
-  new Setting(el).setName('Toda la bóveda actual').setDesc(`${plugin.app.vault.getName()}. No autoriza otras bóvedas ni la configuración de Obsidian.`).addToggle(t=>t.setValue(plugin.settings.wholeVault).onChange(async v=>{plugin.settings.wholeVault=v;await plugin.permissionsChanged();changed();}));
-  new Setting(el).setName('Destino por defecto').setDesc('Carpeta relativa a la bóveda. No cambia los permisos ni los destinos explícitos.').addText(t=>t.setValue(plugin.settings.defaultFolder).onChange(async v=>{try{safePath(v,false);plugin.settings.defaultFolder=v;await plugin.persist();}catch{new Notice('Ruta no válida');}}));
-
-  new Setting(el).setName('Añadir una carpeta').setDesc('Las subcarpetas también quedarán permitidas.').addButton(b=>b.setButtonText('Elegir carpeta…').onClick(()=>new FolderPicker(plugin.app,p=>{
-    if(!plugin.settings.roots.includes(p))plugin.settings.roots.push(p);
-    void plugin.permissionsChanged().then(changed).catch(()=>new Notice('No se pudo guardar la carpeta.'));
-  }).open()));
-  for(const root of plugin.settings.roots){new Setting(el).setName(root).addButton(b=>b.setButtonText('Quitar permiso').onClick(async()=>{
-    plugin.settings.roots=plugin.settings.roots.filter(r=>r!==root);await plugin.permissionsChanged();changed();
-  }));}
-  // A new folder need not exist yet. This grants permission without creating it.
+export function folderDefinitions(plugin:Inbox,changed:()=>void):Array<Omit<SettingDefinitionRender,'render'>&{render:(row:Setting)=>void}>{
   let proposed='';
-  new Setting(el).setName('Carpeta nueva').setDesc('Escribe una ruta si todavía no existe. Se creará al recibir una nota.').addText(t=>t.setPlaceholder('ChatGPT Inbox/Proyectos').onChange(v=>proposed=v.normalize('NFC'))).addButton(b=>b.setButtonText('Permitir').onClick(async()=>{
-    try{safePath(proposed,false);if(!allowed(proposed+'/nota.md',[proposed],plugin.app.vault.configDir))throw Error();
-      if(!plugin.settings.roots.includes(proposed))plugin.settings.roots.push(proposed);
-      await plugin.permissionsChanged();changed();
-    }catch{new Notice('Indica una carpeta relativa válida, fuera de la configuración de Obsidian.');}
-  }));
+  return [
+    {name:'Toda la bóveda actual',desc:`${plugin.app.vault.getName()}. No autoriza otras bóvedas ni la configuración de Obsidian.`,render:row=>{row.addToggle(t=>t.setValue(plugin.settings.wholeVault).onChange(async value=>{plugin.settings.wholeVault=value;await plugin.permissionsChanged();changed();}));}},
+    {name:'Destino por defecto',desc:'Carpeta relativa a la bóveda. No cambia los permisos ni los destinos explícitos.',render:row=>{row.addText(t=>t.setValue(plugin.settings.defaultFolder).onChange(async value=>{try{safePath(value,false);plugin.settings.defaultFolder=value;await plugin.persist();}catch{new Notice('Ruta no válida');}}));}},
+    {name:'Añadir una carpeta',desc:'Las subcarpetas también quedarán permitidas.',render:row=>{row.addButton(b=>b.setButtonText('Elegir carpeta…').onClick(()=>new FolderPicker(plugin.app,path=>{
+      if(!plugin.settings.roots.includes(path))plugin.settings.roots.push(path);
+      void plugin.permissionsChanged().then(changed).catch(()=>new Notice('No se pudo guardar la carpeta.'));
+    }).open()));}},
+    ...plugin.settings.roots.map(root=>({name:root,render:(row:Setting)=>{row.addButton(b=>b.setButtonText('Quitar permiso').onClick(async()=>{
+      plugin.settings.roots=plugin.settings.roots.filter(path=>path!==root);await plugin.permissionsChanged();changed();
+    }));}})),
+    {name:'Carpeta nueva',desc:'Escribe una ruta si todavía no existe. Se creará al recibir una nota.',render:row=>{row.addText(t=>t.setPlaceholder('ChatGPT Inbox/Proyectos').onChange(value=>proposed=value.normalize('NFC'))).addButton(b=>b.setButtonText('Permitir').onClick(async()=>{
+      try{safePath(proposed,false);if(!allowed(proposed+'/nota.md',[proposed],plugin.app.vault.configDir))throw Error();
+        if(!plugin.settings.roots.includes(proposed))plugin.settings.roots.push(proposed);
+        await plugin.permissionsChanged();changed();
+      }catch{new Notice('Indica una carpeta relativa válida, fuera de la configuración de Obsidian.');}
+    }));}}
+  ];
+}
+export function folderControls(el:HTMLElement,plugin:Inbox,changed:()=>void){
+  for(const definition of folderDefinitions(plugin,changed)){
+    const row=new Setting(el).setName(definition.name);
+    if(definition.desc)row.setDesc(definition.desc);
+    definition.render(row);
+  }
 }
 
 export class SetupModal extends Modal {

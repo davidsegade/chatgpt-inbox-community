@@ -145,7 +145,7 @@ test('buscar nota solo recorre árboles autorizados y excluye configuración per
 });
 test('ajustes declarativos exponen búsqueda y actualizan mediante API pública',async()=>{
  const {p,tabs}=harness();await p.onload();const tab=tabs[0];const definitions=tab.getSettingDefinitions();
- a.ok(definitions.some(d=>d.name==='Carpetas permitidas'&&d.aliases.includes('Destino por defecto')));
+ a.ok(definitions.some(d=>d.type==='group'&&d.heading==='Carpetas permitidas'&&d.items.some(item=>item.name==='Destino por defecto')));
  a.ok(definitions.some(d=>d.name==='Importar solicitudes'));
  a.equal(Object.hasOwn(Object.getPrototypeOf(tab),'display'),false);
 });
