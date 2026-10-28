@@ -160,7 +160,13 @@ test('revocar permiso durante creación de carpetas GitHub impide escribir la no
  await p.poll(true);a.equal(p.history[0].state,'Bloqueada');a.equal(p.ledger[job.id],undefined);
 });
 
-const settle=async p=>{for(let i=0;i<30;i++){await new Promise(resolve=>setImmediate(resolve));if(!p.running)return;}a.fail('receiver did not settle');};
+const settle=async p=>{
+ await new Promise(resolve=>setImmediate(resolve));if(!p.running)return;
+ await new Promise((resolve,reject)=>{
+  const timeout=setTimeout(()=>{unsubscribe();reject(Error('receiver did not settle'));},2000);
+  const unsubscribe=p.onUpdate(()=>{if(!p.running){clearTimeout(timeout);unsubscribe();resolve();}});
+ });
+};
 test('sin internet no hace solicitudes; volver online respeta una sola recepción',async()=>{
  const h=harness({settings:{enabled:true,transport:'github',repository:'owner/repo'}},async()=>({status:200,json:[],headers:{}}));await h.p.onload();h.document.hidden=false;h.navigator.onLine=false;
  await h.p.poll(true);a.equal(h.requests.length,0);a.equal(h.p.receptionSummary().label,'Sin conexión');
