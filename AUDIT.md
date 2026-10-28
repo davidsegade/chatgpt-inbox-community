@@ -1,3 +1,13 @@
+# 0.4.4 reliability candidate evidence
+
+The new candidate adds explicit local-vs-remote receipt state, lifecycle cancellation, deadlines/backoff, setup checks, an opt-in synthetic connection test and allowlisted diagnostics. 147 automated tests and the full recommended Obsidian lint/typecheck/build pass locally. A native desktop test on Obsidian 1.14.5 used a new disposable vault, an ephemeral loopback relay and a disposable OAuth/MCP client; both a client-created note and the new test-button note reached verified delivered receipts. Diagnostics were inspected in the native UI. No private vault, production credential or hosted deployment was used.
+
+The test route reuses the durable queue, device scope, byte/job limits and retention. Tests cover authentication separation, scope revocation, idempotency, two devices, queue capacity, lost receipt responses, missing local files and rollback. PostgreSQL CI adds persisted test-key/receipt and failed-enqueue checks. The receiver abandons late network responses after cancellation; the underlying requestUrl socket is not claimed to be forcibly aborted. Receipts already in progress can be recovered by their saved key/identity.
+
+Physical iPhone acceptance remains pending as documented in MOBILE-ACCEPTANCE.md. The normal receiver still works with older relays; only the optional note-test feature needs the operator to deploy the updated relay. Source/assets are prepared as 0.4.4, not claimed published. The released 0.4.3 is already listed in Community with automated review Passed.
+
+---
+
 # 0.4.3 candidate verification — 28 October 2026
 
 The official Community entry and community-plugins.json identify `davidsegade/chatgpt-inbox-community`, ID `chatgpt-inbox-community`, current listed/released version 0.4.2. The working directory `/Users/davidsegade/ChatGPT-Inbox` instead has remote `obsidian-chatgpt-test`, version 0.4.0 and uncommitted work; it was read only and not changed. This candidate starts from the clean standalone Community repository at 6f39865effb932a182bc0dcdafe7ff407f31ba88.

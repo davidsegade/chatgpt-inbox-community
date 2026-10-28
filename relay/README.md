@@ -62,3 +62,11 @@ La prueba detiene bruscamente procesos del relay, comprueba restauración de
 emparejamientos/códigos/tokens/colas/recibos, deniega escrituras SQL, prueba la
 segunda instancia y elimina una conexión real. El workflow Community incluye
 PostgreSQL 18 local como servicio CI; no se ha ejecutado aún en GitHub.
+
+## Optional connection-test protocol in 0.4.4
+
+Update the relay separately from the Obsidian plugin to enable the new test button. No hosted deployment is performed by a plugin update. Existing `/plugin/poll` and `/plugin/receipt` clients remain compatible. Poll responses additionally contain aggregate `counts.queued`, `counts.blocked` and `writerConnected`; the last flag means an authorized client grant is present, not proof of a particular client's tool call.
+
+`POST /plugin/test` requires the device's plugin Bearer credential. Its body is `{key,path}`, with a `connection-test-` retry key and an exact synthetic filename `Prueba de conexión-<key>.md` inside the currently authorized folder. Content is fixed by the server; callers cannot supply note contents. It returns only the normal receipt. The existing poll → create-only write → verified receipt path handles delivery. Retry keys and payload signatures are device-scoped; another path or a non-test request using the key is rejected. Test requests share normal queue/byte limits, TTL, content removal on confirmation and durable rollback behavior, plus a separate rate limit of 30 requests per minute per device. No OAuth access/refresh tokens are returned to the plugin.
+
+An older server returns 404 for the optional test route; the 0.4.4 UI explains that its operator must update the relay while ordinary reception remains usable. No production relay is certified or updated by the local desktop acceptance test.

@@ -1,1 +1,1 @@
-.chatgpt-inbox-instructions { width: 100%; }
+.chatgpt-inbox-instructions { width: 100%; max-width: 100%; min-height: 12em; box-sizing: border-box; resize: vertical; }

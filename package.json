@@ -1,12 +1,12 @@
 {
   "name": "chatgpt-inbox",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Create Markdown notes through a paired relay, Lite links or an advanced GitHub inbox.",
   "main": "index.js",
   "scripts": {
     "build": "node build.mjs",
     "check": "tsc",
-    "test": "npm run build && node --test test.cjs integration.cjs source.test.cjs identity.test.cjs ui.test.cjs relay/relay.test.mjs",
+    "test": "npm run build && node --test test.cjs integration.cjs source.test.cjs identity.test.cjs ui.test.cjs reception.test.cjs relay/relay.test.mjs",
     "relay": "npm run build && node relay/server.mjs",
     "verify": "npm run lint && npm run check && npm test",
     "package:community": "node tools/package-community.mjs",

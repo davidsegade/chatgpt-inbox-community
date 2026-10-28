@@ -46,7 +46,7 @@ test('HTTP OAuth + MCP SDK + plugin compilado → nota verificada → recibo; re
   if(r.url.endsWith('/receipt')&&failAck){failAck=false;throw Error('network interrupted');}
   const response=await fetch(r.url,{method:r.method,headers:r.headers,body:r.body});return {status:response.status,json:await response.json(),headers:{}};
  }};
- const mod={exports:{}};vm.runInNewContext(readFileSync(new URL('../main.js',import.meta.url),'utf8'),{module:mod,exports:mod.exports,require:()=>api,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,URL,Date,document:{hidden:false}});
+ const mod={exports:{}};vm.runInNewContext(readFileSync(new URL('../main.js',import.meta.url),'utf8'),{module:mod,exports:mod.exports,require:()=>api,AbortController,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,URL,Date,window:{setTimeout,clearTimeout},document:{hidden:false}});
  const plugin=new mod.exports.default();plugin.app={secretStorage:{getSecret:()=>p.plugin_token},vault:{configDir:'.obsidian',getAbstractFileByPath:path=>files.has(path)?new TFile(path):path.endsWith('.md')?null:new TFolder(),read:async f=>files.get(f.path),create:async(path,content)=>{assert.equal(files.has(path),false);files.set(path,content);},createFolder:async()=>{}}};
  plugin.settings={...plugin.settings,enabled:true,transport:'relay',relay:f.origin,boundRelay:f.origin,roots:['Inbox']};
  await plugin.poll(true);assert.ok(files.get('Inbox/Árbol.md').startsWith(note.contenido));assert.equal(unpack(await c.callTool({name:'consultar_estado',arguments:{id:queued.id}})).state,'queued');
@@ -506,4 +506,73 @@ test('registered DCR client remains valid when first linking or reconnecting aft
  const first=await f.authorize(await f.pair(),{clientId:registered.client_id});assert.equal(first.response.status,200);
  time+=31*86400000;
  const reconnect=await f.authorize(await f.pair(),{clientId:registered.client_id});assert.equal(reconnect.response.status,200);
+});
+
+function compiledReceiver(f,pair,{saved,alterResponse,interceptRequest}={}){
+ const files=new Map(),snapshots=[],requests=[];const document={hidden:false};
+ class TFile{constructor(path){this.path=path;this.extension='md';}}class TFolder{constructor(path){this.path=path;}}
+ const api={apiVersion:'1.14.5',Modal:class{},FuzzySuggestModal:class{},PluginSettingTab:class{},Setting:class{},SecretComponent:class{},TFile,TFolder,Notice:class{},Plugin:class{
+  async loadData(){return saved??{};}async saveData(data){snapshots.push(JSON.parse(JSON.stringify(data)));}
+  registerEvent(){}addRibbonIcon(){}addCommand(){}addSettingTab(){}registerInterval(){}registerDomEvent(){}
+ },requestUrl:async request=>{
+  requests.push(request);const intercepted=interceptRequest?.(request);if(intercepted)return intercepted;const response=await fetch(request.url,{method:request.method,headers:request.headers,body:request.body});
+  const result={status:response.status,json:await response.json(),headers:{}};
+  return alterResponse?alterResponse(request,result):result;
+ }};
+ const mod={exports:{}};vm.runInNewContext(readFileSync(new URL('../main.js',import.meta.url),'utf8'),{module:mod,exports:mod.exports,require:()=>api,AbortController,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,URL,Date,document,window:{setTimeout,clearTimeout,setInterval:()=>1}});
+ const plugin=new mod.exports.default();plugin.manifest={version:'0.4.4'};plugin.app={secretStorage:{getSecret:()=>pair.plugin_token},workspace:{onLayoutReady:()=>{}},vault:{configDir:'.obsidian',getName:()=> 'Disposable',on:()=>({}),getAbstractFileByPath:path=>files.has(path)?new TFile(path):path.endsWith('.md')?null:new TFolder(path),read:async file=>files.get(file.path),create:async(path,content)=>{assert.equal(files.has(path),false);files.set(path,content);},createFolder:async()=>{}}};
+ plugin.settings={...plugin.settings,enabled:true,transport:'relay',relay:f.origin,boundRelay:f.origin,roots:['Inbox'],defaultFolder:'Inbox'};
+ return {plugin,files,snapshots,requests,document};
+}
+test('nota de prueba autenticada: ámbito, idempotencia, separación de dispositivos y capacidad',async t=>{
+ const f=await fixture(t,{maxJobs:1}),pair=await f.pair(),session=await f.authorize(pair),other=await f.pair();
+ const key='connection-test-contract-12345678',path=`Inbox/Prueba de conexión-${key}.md`;
+ assert.equal((await f.post('/plugin/test',{key,path})).status,401);
+ assert.equal((await f.post('/plugin/test',{key,path},session.access_token)).status,401);
+ assert.equal((await f.post('/plugin/test',{key,path:'Private/Prueba de conexión-'+key+'.md'},pair.plugin_token)).status,400);
+ const created=await f.post('/plugin/test',{key,path},pair.plugin_token);assert.equal(created.status,200);const job=await created.json();assert.equal(job.state,'queued');assert.equal(job.path,path);assert.equal(job.content,undefined);
+ assert.equal((await(await f.post('/plugin/test',{key,path},pair.plugin_token)).json()).id,job.id);
+ assert.equal((await f.post('/plugin/test',{key,path:'Inbox/Sub/Prueba de conexión-'+key+'.md'},pair.plugin_token)).status,409);
+ const anotherKey='connection-test-contract-87654321';assert.equal((await f.post('/plugin/test',{key:anotherKey,path:`Inbox/Prueba de conexión-${anotherKey}.md`},pair.plugin_token)).status,429);
+ const otherJob=await(await f.post('/plugin/test',{key,path},other.plugin_token)).json();assert.notEqual(otherJob.id,job.id);
+ const blocked=await(await f.post('/plugin/poll',{folders:[]},pair.plugin_token)).json();assert.equal(blocked.counts.blocked,1);assert.deepEqual(blocked.jobs,[]);
+});
+test('prueba completa con plugin compilado distingue fallo de recibo, recupera la misma nota y verifica recibo real',async t=>{
+ const f=await fixture(t),pair=await f.pair();await f.authorize(pair);let failAck=true;
+ const h=compiledReceiver(f,pair,{alterResponse:(request,result)=>{
+  if(request.url.endsWith('/receipt')&&failAck){failAck=false;throw Error('simulated response loss after server commit');}return result;
+ }});
+ assert.equal(await h.plugin.testDelivery(),'delivered','the receipt query recovers an ACK response lost after commit');
+ assert.equal(h.files.size,1);assert.equal(h.plugin.deliveryTest.state,'delivered');
+ const raw=JSON.stringify(h.snapshots);assert.ok(!raw.includes(pair.plugin_token));assert.ok(h.snapshots.some(snapshot=>snapshot.history.some(entry=>entry.state==='Guardada sin recibo'&&entry.receiptPending)));
+ const key=h.plugin.deliveryTest.key;const response=await f.post('/plugin/test',{key,path:h.plugin.deliveryTest.path},pair.plugin_token);assert.equal((await response.json()).state,'delivered');
+ assert.ok(h.requests.filter(request=>request.url.endsWith('/plugin/test')).length>=2);
+});
+test('un recibo que todavía no llegó mantiene la misma clave al reintentar y no duplica la nota',async t=>{
+ const f=await fixture(t),pair=await f.pair();await f.authorize(pair);let dropAck=true;
+ const h=compiledReceiver(f,pair);const realRequest=h.plugin.relayRequest.bind(h.plugin);
+ h.plugin.relayRequest=async(path,body,...rest)=>{if(path==='/plugin/receipt'&&dropAck){dropAck=false;throw Error('offline before request');}return realRequest(path,body,...rest);};
+ assert.equal(await h.plugin.testDelivery(),'queued');const firstKey=h.plugin.deliveryTest.key;assert.equal(h.plugin.history[0].state,'Guardada sin recibo');assert.equal(h.files.size,1);
+ assert.equal(await h.plugin.testDelivery(),'delivered');assert.equal(h.plugin.deliveryTest.key,firstKey);assert.equal(h.files.size,1);assert.equal(h.plugin.history[0].state,'Importada');assert.equal(h.plugin.history[0].receiptPending,false);
+});
+test('comprobar conexión detecta autorización pendiente y una prueba no afirma entrega sin archivo local',async t=>{
+ const f=await fixture(t),pair=await f.pair();const h=compiledReceiver(f,pair);
+ await assert.rejects(h.plugin.checkConnection(),error=>error.code==='pairing-pending');assert.equal(h.files.size,0);
+ await f.authorize(pair);assert.equal(await h.plugin.testDelivery(),'delivered');const old={...h.plugin.deliveryTest};
+ h.files.clear();h.plugin.deliveryTest={...old,state:'unknown'};
+ await assert.rejects(h.plugin.testDelivery(),error=>error.code==='configuration');assert.notEqual(h.plugin.deliveryTest.state,'delivered','UI cannot show a confirmed test before local verification');assert.equal(h.files.size,0,'a deleted confirmed note is not silently recreated');
+});
+test('test durable falla sin dejar una nota fantasma en el siguiente snapshot',async t=>{
+ let state=null,failSave=false;const storage={healthy:true,load:async()=>state,save:async snapshot=>{if(failSave)throw Error('disk unavailable');state=structuredClone(snapshot);},close:async()=>{}};
+ const f=await fixture(t,{storage});await f.server.startup;const pair=await f.pair();await f.authorize(pair);failSave=true;
+ const key='connection-test-durable-12345678',path=`Inbox/Prueba de conexión-${key}.md`;
+ assert.equal((await f.post('/plugin/test',{key,path},pair.plugin_token)).status,503);assert.equal(state.devices[0][1].jobs.length,0);
+});
+
+test('relay anterior informa de prueba no disponible y mantiene la recepción normal',async t=>{
+ const f=await fixture(t),pair=await f.pair();const session=await f.authorize(pair);
+ const h=compiledReceiver(f,pair,{interceptRequest:request=>request.url.endsWith('/plugin/test')?{status:404,json:{error:'Not found'},headers:{}}:null});
+ await assert.rejects(h.plugin.testDelivery(),error=>error.code==='relay-update');assert.equal(h.files.size,0);
+ const client=await f.client(session.access_token);await client.callTool({name:'crear_nota',arguments:note});await h.plugin.poll(true);
+ assert.equal(h.files.size,1);assert.equal(h.plugin.history[0].state,'Importada');
 });

@@ -7,7 +7,7 @@ import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/st
 import {z} from 'zod';
 import {PgSnapshotStore} from './storage.mjs';
 import core from '../core.cjs';
-const {safePath,parseJob}=core;
+const {safePath,parseJob,CONNECTION_TEST_CONTENT}=core;
 const random=()=>randomBytes(32).toString('base64url');
 const hash=s=>createHash('sha256').update(s).digest('base64url');
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
@@ -89,22 +89,28 @@ export function createRelay({origin,now=Date.now,ttl=86400000,maxDevices=100,max
    const client=clients.get(clientId);if(client)delete client.expires;
    return {access_token:token,token_type:'Bearer',expires_in:Math.floor((expires-now())/1000),refresh_token:refresh,scope};
   }
+  async function enqueue(d,path,content,key,isTest=false){
+    const signature=hash(JSON.stringify([path,content]));
+    const old=[...d.jobs.values()].find(job=>job.key===key);
+    if(old){if(old.signature!==signature||Boolean(old.connectionTest)!==isTest)throw fail(409,'Retry key conflict');return old;}
+    const live=[...d.jobs.values()].filter(job=>job.expires>now());
+    if(live.length>=maxJobs)throw fail(429,'Queue full');
+    const size=Buffer.byteLength(content),deviceBytes=live.reduce((n,job)=>n+Buffer.byteLength(job.content||''),0);
+    if(deviceBytes+size>maxDeviceQueuedBytes)throw fail(429,'Queue full');
+    let queuedBytes=size;for(const device of devices.values())for(const job of device.jobs.values())queuedBytes+=Buffer.byteLength(job.content||'');
+    if(queuedBytes>maxQueuedBytes)throw fail(429,'Queue full');
+    const id=randomBytes(16).toString('hex'),job=parseJob(JSON.stringify({version:1,id,path,content}),d.folders,'.obsidian');
+    const entry={...job,key,signature,state:'queued',created:now(),expires:now()+ttl,...(isTest?{connectionTest:true}:{})};
+    d.jobs.set(id,entry);await persist();return entry;
+  }
   async function mcp(req,res,d){
-   const server=new McpServer({name:'chatgpt-inbox',version:'0.4.1'},{instructions:'Primero listar_carpetas. crear_nota solo en carpetas autorizadas. queued NO significa entregada. Usa consultar_estado; solo delivered confirma escritura verificada por el plugin. Nunca prometas entrega sin ese recibo.'});
+   const server=new McpServer({name:'chatgpt-inbox',version:'0.4.4'},{instructions:'Primero listar_carpetas. crear_nota solo en carpetas autorizadas. queued NO significa entregada. Usa consultar_estado; solo delivered confirma escritura verificada por el plugin. Nunca prometas entrega sin ese recibo.'});
    const result=v=>({content:[{type:'text',text:JSON.stringify(v)}]});
    server.registerTool('listar_carpetas',{description:'Lista carpetas autorizadas y última conexión de Obsidian. Usa antes de crear una nota.',inputSchema:{},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},async()=>result({carpetas:d.folders,ambito:d.folders.includes('*')?'boveda_actual':'carpetas',destino_por_defecto:d.defaultFolder||'ChatGPT Inbox',plugin_seen:d.seen??null}));
    server.registerTool('crear_nota',{description:'Crea una nota Markdown nueva. Devuelve queued; confirma con consultar_estado. Reutiliza clave para reintentar la misma petición.',inputSchema:{carpeta:z.string().max(800).optional(),titulo:z.string().min(1).max(120),contenido:z.string().max(60000),clave:z.string().regex(/^[a-zA-Z0-9-]{8,100}$/)},annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false}},async({carpeta,titulo,contenido,clave})=>{
     try{carpeta=carpeta??d.defaultFolder??'ChatGPT Inbox';safePath(carpeta,false);if(!d.folders.some(root=>root==='*'||carpeta===root||carpeta.startsWith(root+'/')))throw Error('Carpeta no autorizada');const title=titulo.normalize('NFC');if(title.includes('/')||title.includes('\\'))throw Error('Título inválido');const path=safePath(`${carpeta}/${title.replace(/\.md$/,'')}.md`),signature=hash(JSON.stringify([path,contenido]));
      const old=[...d.jobs.values()].find(j=>j.key===clave);if(old){if(old.signature!==signature)throw Error('Clave reutilizada con contenido distinto');return result(receipt(old));}
-     // Only live jobs count against the queue so an expired receipt never locks
-     // the user out of creating notes.
-     const live=[...d.jobs.values()].filter(j=>j.expires>now());if(live.length>=maxJobs)throw Error('Cola llena');
-     const size=Buffer.byteLength(contenido);
-     const deviceBytes=live.reduce((n,j)=>n+Buffer.byteLength(j.content||''),0);
-     if(deviceBytes+size>maxDeviceQueuedBytes)throw Error('Relay sin capacidad temporal');
-     let queuedBytes=size;for(const device of devices.values())for(const job of device.jobs.values())queuedBytes+=Buffer.byteLength(job.content||'');
-     if(queuedBytes>maxQueuedBytes)throw Error('Relay sin capacidad temporal');
-     const id=randomBytes(16).toString('hex'),job=parseJob(JSON.stringify({version:1,id,path,content:contenido}),d.folders,'.obsidian');const j={...job,key:clave,signature,state:'queued',created:now(),expires:now()+ttl};d.jobs.set(id,j);await persist();return result(receipt(j));
+     return result(receipt(await enqueue(d,path,contenido,clave)));
     }catch(e){return {...result({error:e.message}),isError:true};}
    });
    server.registerTool('consultar_estado',{description:'Consulta recibo. Solo delivered indica que Obsidian confirmó la nota; queued, conflict y expired no son entrega.',inputSchema:{id:z.string().min(1).max(100)},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},async({id})=>{const j=d.jobs.get(id);return j?result(receipt(j)):{...result({error:'Desconocida o recibo caducado'}),isError:true};});
@@ -112,7 +118,7 @@ export function createRelay({origin,now=Date.now,ttl=86400000,maxDevices=100,max
   }
   const handler=async(req,res)=>{try{
    if(!loaded||loadFailed||storage?.healthy===false)throw fail(503,'Durable storage unavailable');await sweepAndPersist();if(req.headers.host!==base.host)throw fail(403,'Host rejected');const u=new URL(req.url,origin),path=u.pathname;if(req.headers.origin&&req.headers.origin!==origin&&!((path==='/register'||path==='/token')&&req.method==='POST'))throw fail(403,'Origin rejected');
-   if(path==='/health'&&req.method==='GET'){const degraded=saveFault||storage?.healthy===false;return await json(res,degraded?503:200,{ok:!degraded,storage:storage?(degraded?'degraded':'postgres'):'ephemeral',version:'0.4.1'},false);}
+   if(path==='/health'&&req.method==='GET'){const degraded=saveFault||storage?.healthy===false;return await json(res,degraded?503:200,{ok:!degraded,storage:storage?(degraded?'degraded':'postgres'):'ephemeral',version:'0.4.4'},false);}
    if(path==='/.well-known/oauth-protected-resource'||path==='/.well-known/oauth-protected-resource/mcp')return await json(res,200,{resource:origin+'/mcp',authorization_servers:[origin],scopes_supported:['inbox']},false);
    if(path==='/.well-known/oauth-authorization-server')return await json(res,200,{issuer:origin,authorization_response_iss_parameter_supported:true,authorization_endpoint:origin+'/authorize',token_endpoint:origin+'/token',registration_endpoint:origin+'/register',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none'],scopes_supported:['inbox','offline_access']},false);
    if(path==='/register'&&req.method==='POST'){rate(req,30);if(clients.size>=1000)throw fail(429,'Registration full');const b=await body(req);if(!Array.isArray(b.redirect_uris)||!b.redirect_uris.length||b.redirect_uris.length>5||!b.redirect_uris.every(redirectOK))throw fail(400,'Invalid redirect');const id=random();clients.set(id,{redirects:b.redirect_uris});return await json(res,201,{client_id:id,redirect_uris:b.redirect_uris,token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']});}
@@ -164,8 +170,16 @@ export function createRelay({origin,now=Date.now,ttl=86400000,maxDevices=100,max
    }
    if(path==='/mcp'&&req.method==='POST'){const d=auth(req,'writer');rate(req,120,'device:'+d.pluginHash);return await mcp(req,res,d);}
    if(path==='/plugin/revoke'&&req.method==='POST'){const d=auth(req,'plugin');rate(req,120,'device:'+d.pluginHash);for(const[k,v]of devices)if(v===d)devices.delete(k);return await json(res,200,{revoked:true});}
-   if(path==='/plugin/poll'&&req.method==='POST'){const d=auth(req,'plugin');rate(req,120,'device:'+d.pluginHash);const b=await body(req);const roots=folders(b.folders,true),destination=safePath(b.defaultFolder??d.defaultFolder??'ChatGPT Inbox',false);d.folders=roots;d.defaultFolder=destination;d.seen=now();for(const j of d.jobs.values())if((j.state==='queued'||j.state==='blocked')&&j.expires>now()){j.state=d.folders.some(root=>root==='*'||j.path.startsWith(root+'/'))?'queued':'blocked';}return await json(res,200,{jobs:[...d.jobs.values()].filter(j=>j.state==='queued').slice(0,10).map(j=>({version:1,id:j.id,path:j.path,content:j.content}))});}
-   if(path==='/plugin/receipt'&&req.method==='POST'){const d=auth(req,'plugin');rate(req,120,'device:'+d.pluginHash);const b=await body(req),j=d.jobs.get(b.id);if(!j||!['delivered','conflict'].includes(b.state))throw fail(400,'Invalid receipt');if(j.state===b.state)return await json(res,200,receipt(j));if(j.state!=='queued')throw fail(409,'Terminal receipt');j.state=b.state;j.confirmed=now();delete j.content;return await json(res,200,receipt(j));}
+   if(path==='/plugin/poll'&&req.method==='POST'){const d=auth(req,'plugin');rate(req,120,'device:'+d.pluginHash);const b=await body(req);const roots=folders(b.folders,true),destination=safePath(b.defaultFolder??d.defaultFolder??'ChatGPT Inbox',false);d.folders=roots;d.defaultFolder=destination;d.seen=now();for(const j of d.jobs.values())if((j.state==='queued'||j.state==='blocked')&&j.expires>now()){j.state=d.folders.some(root=>root==='*'||j.path.startsWith(root+'/'))?'queued':'blocked';}return await json(res,200,{counts:{queued:[...d.jobs.values()].filter(j=>j.state==='queued').length,blocked:[...d.jobs.values()].filter(j=>j.state==='blocked').length},writerConnected:[...d.accessTokens.values()].some(t=>t.expires>now()||(t.refreshHash&&Math.min(t.refreshExpires,t.refreshIdleExpires??Infinity)>now())),jobs:[...d.jobs.values()].filter(j=>j.state==='queued').slice(0,10).map(j=>({version:1,id:j.id,path:j.path,content:j.content}))});}
+   if(path==='/plugin/test'&&req.method==='POST'){
+    const d=auth(req,'plugin');rate(req,30,'test:'+d.pluginHash);const b=await body(req);
+    if(typeof b.key!=='string'||!/^connection-test-[a-zA-Z0-9-]{8,80}$/.test(b.key)||typeof b.path!=='string')throw fail(400,'Invalid connection test');
+    const path=safePath(b.path);
+    if(!path.endsWith('/Prueba de conexión-'+b.key+'.md'))throw fail(400,'Invalid connection test path');
+    const job=await enqueue(d,path,CONNECTION_TEST_CONTENT,b.key,true);
+    return await json(res,200,receipt(job));
+   }
+   if(path==='/plugin/receipt' &&req.method==='POST'){const d=auth(req,'plugin');rate(req,120,'device:'+d.pluginHash);const b=await body(req),j=d.jobs.get(b.id);if(!j||!['delivered','conflict'].includes(b.state))throw fail(400,'Invalid receipt');if(j.state===b.state)return await json(res,200,receipt(j));if(j.state!=='queued')throw fail(409,'Terminal receipt');j.state=b.state;j.confirmed=now();delete j.content;return await json(res,200,receipt(j));}
    throw fail(404,'Not found');
   }catch(e){if(res.headersSent){res.end();return;}const status=e.status||400;if(status===401)res.setHeader('WWW-Authenticate',`Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource", scope="inbox"`);const message=status===503?'Durable storage unavailable':status>=500?'Error interno':e.message;
    try{await json(res,status,{error:message},false);}

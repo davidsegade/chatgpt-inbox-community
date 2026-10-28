@@ -50,6 +50,20 @@ Connections created by an older relay do not gain a refresh token automatically:
 
 Reception checks at most once per configured interval (minimum 60 seconds; default 120), while Obsidian is active. Open **Recibir ahora** for an immediate check. Vault synchronization is a separate service and is not supplied by this plugin.
 
+## Reception and connection checks in 0.4.4
+
+The setup assistant checks both the authorized default destination and the device connection before activating reception. A current relay also reports whether client authorization is complete. Choosing a folder does not grant access to another folder merely because it is the default destination.
+
+The inbox distinguishes a verified local note waiting for its relay receipt from a confirmed delivery, a conflict and a blocked request. A failed receipt is retried with the existing identity; it does not create another note. Connection status and the last successful check do not by themselves confirm that a particular note arrived.
+
+While Obsidian is active, transient failures retry after 1, 2, 4, 8 and at most 15 minutes. A manual receive can retry sooner, but must respect server rate limits. Requests have a 20-second deadline. Moving into the background releases outstanding waits; a late response cannot resume an obsolete receiver. Returning to Obsidian checks again when appropriate. These controls do not enable iOS background delivery.
+
+After activating Relay mode, **Crear nota de prueba y verificar** creates a synthetic note inside the authorized default folder and queries its receipt. Its retry key is saved before contacting the relay, so interruptions or restarts reuse the same request. A delivered test also requires the expected local note and its identity. The test checks relay → Obsidian; send a note from your actual client to check that client's MCP tool access too. Running another test after confirmation deliberately creates another synthetic note.
+
+The test button requires the operator to update the separate relay to 0.4.4. Older relays continue normal reception and show an explanatory message for this optional feature. Updating the Obsidian plugin does not deploy or update a hosted relay.
+
+**Ver diagnóstico** shows a report for review and optional native copy. It contains versions, transport, status, check timestamps and aggregate counts; it omits notes, paths, folder/vault names, server/repository addresses, request IDs, pairing codes and credentials. It is never uploaded automatically. See [mobile acceptance](MOBILE-ACCEPTANCE.md) for the distinction between automated, desktop and physical-iPhone evidence.
+
 ## Lite and GitHub
 
 Lite produces an `obsidian://new` link locally. Open the link deliberately; it does not provide a remote receipt. Anyone who sees the link can read its encoded content. Long links or title conflicts should be checked before use.
@@ -64,7 +78,7 @@ Pending content expires after 24 hours and is removed from the active store at d
 
 ## Status and development
 
-Version 0.4.2 is listed in the Community directory; 0.4.3 is a correction candidate until its release and directory scan are verified. Directory listing does not imply manual approval. Desktop acceptance was performed on Obsidian 1.14.5. A user reported the configured iPhone flow working; the exact iOS/Obsidian version and the full physical-device acceptance matrix remain to be recorded. See [acceptance evidence](AUDIT.md) and the [submission checklist](COMMUNITY.md).
+Version 0.4.3 is published in the Community directory and its automated review passed. Version 0.4.4 is the reliability candidate in this source tree until its release is published and scanned. Directory listing does not imply manual approval. Desktop acceptance was performed on Obsidian 1.14.5. A user reported the configured iPhone flow working; the exact iOS/Obsidian version and the full physical-device acceptance matrix remain to be recorded. See [acceptance evidence](AUDIT.md) and the [submission checklist](COMMUNITY.md).
 
 Build from source with Node.js 24:
 

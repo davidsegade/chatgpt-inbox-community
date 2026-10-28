@@ -66,3 +66,9 @@ no private settings or credentials are imported automatically.
 The folder picker enumerates local file/folder metadata to let the user choose a destination. It does not read note content or send the listing to the relay. History lookup traverses only authorized folder subtrees (the whole vault only when explicitly authorized), skips configuration paths, and checks authorization again before each content read. The picker capability disclosure is therefore expected.
 
 The plugin no longer uses clipboard APIs. “Seleccionar para copiar” selects the generated instruction in a local text area; the user copies it through the operating system menu on desktop or mobile. Clipboard contents are never read.
+
+## Reliability candidate 0.4.4
+
+A connection test creates a synthetic note only after the user explicitly selects its button, with reception enabled and the default folder currently authorized. A retry key, path, receipt state and relay/secret identifiers are stored locally so interruption can recover the same request. No existing note is sent to the relay. The server applies the device's current folder scope, queue/byte/rate limits, normal retention and durable save behavior to test requests as well.
+
+Diagnostics are generated from an explicit allowlist: version numbers, transport/state, check timestamps and counts. They exclude note content, paths, folder/vault names, server/repository addresses, request IDs, pairing codes and credentials. A report remains local unless the user chooses to share it through the operating system. No clipboard API or automatic upload is added.
