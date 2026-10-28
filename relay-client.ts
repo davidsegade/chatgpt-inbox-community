@@ -17,7 +17,7 @@ export async function receiveRelay(jobs:unknown,roots:string[],configDir:string,
    await persist();await ack(job.id,conflict?'conflict':'delivered');
   }
 }
-export function liteURI(vault:string,folder:string,title:string,content:string,configDir='.obsidian'){
+export function liteURI(vault:string,folder:string,title:string,content:string,configDir=''){
   const path=`${folder}/${title.normalize('NFC').replace(/\.md$/,'')}`;
   parseJob(JSON.stringify({version:1,id:'lite',path:path+'.md',content}),[folder],configDir);
   if(title.includes('/')||title.includes('\\'))throw Error('Título inválido');

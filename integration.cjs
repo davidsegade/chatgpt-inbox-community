@@ -19,16 +19,17 @@ test('plugin compilado: GitHub GET → bóveda, reintento, conflicto, secreto y 
  a.ok(calls.every(r=>r.method==='GET'&&r.url.startsWith('https://api.github.com/repos/davidsegade/obsidian-chatgpt-test/')));
 });
 function harness(data={},requestHook){
- const saved=[],requests=[];let layout;
+ const saved=[],requests=[],tabs=[],document={hidden:true};let layout;
  const module={exports:{}};
- class Folder{constructor(path){this.path=path;}}
- const api={Modal:class{},FuzzySuggestModal:class{},TFolder:Folder,TFile:class{},PluginSettingTab:class{},Setting:class{},SecretComponent:class{},Notice:class{},Plugin:class{
+ class Folder{constructor(path){this.path=path;this.children=[];}}
+ class File{constructor(path){this.path=path;this.extension='md';}}
+ const api={Modal:class{},FuzzySuggestModal:class{},TFolder:Folder,TFile:File,PluginSettingTab:class{},Setting:class{},SecretComponent:class{},Notice:class{},Plugin:class{
   loadData(){return Promise.resolve(data);}saveData(d){saved.push(d);return Promise.resolve();}
-  registerEvent(){}addRibbonIcon(){}addCommand(){}addSettingTab(){}registerInterval(){}registerDomEvent(){}
- },requestUrl:async r=>{requests.push(r);return requestHook?await requestHook(r):{status:200,json:[{type:'file',name:'a.json'}],headers:{}};}};
- vm.runInNewContext(fs.readFileSync('main.js','utf8'),{module,exports:module.exports,require:()=>api,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,atob,URL,document:{hidden:true},window:{setInterval:()=>1},Date});
+  registerEvent(){}addRibbonIcon(){}addCommand(){}addSettingTab(tab){tabs.push(tab);}registerInterval(){}registerDomEvent(){}
+ },requestUrl:async r=>{requests.push(r);return requestHook?await requestHook(r):{status:200,json:[{type:'file',name:'a.json',sha:'a'.repeat(40),size:100}],headers:{}};}};
+ vm.runInNewContext(fs.readFileSync('main.js','utf8'),{module,exports:module.exports,require:()=>api,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,atob,URL,document,window:{setInterval:()=>1},Date});
  const p=new module.exports.default();p.app={vault:{getName:()=> 'Bóveda de prueba',on:()=>({})},secretStorage:{getSecret:()=> 'test-token'},workspace:{onLayoutReady:cb=>layout=cb}};
- return {p,saved,requests};
+ return {p,saved,requests,tabs,Folder,File,document};
 }
 test('migración 0.1 conserva ajustes, ledger y recepción pausada',async()=>{
  const old={settings:{enabled:false,roots:['Mis notas'],secret:'existing-secret',interval:300},ledger:{old:'hash'}};
@@ -120,4 +121,39 @@ test('cambiar el nombre del secreto exige emparejar y revoca el secreto anterior
  p.app.secretStorage={getSecret:id=>id==='old-secret'?'old-test-token':null,setSecret:()=>{}};
  await a.rejects(p.relayRequest('/plugin/poll',{}),/secreto/);a.equal(requests.length,0);
  await p.pairRelay();a.equal(requests[0].headers.Authorization,'Bearer old-test-token');a.equal(requests[0].url,'https://relay.example/plugin/revoke');a.equal(requests[1].headers.Authorization,undefined);a.equal(p.settings.boundRelaySecret,'new-secret');
+});
+
+test('datos locales dañados no inyectan tipos, historial ni claves de prototipo',async()=>{
+ const {p}=harness(JSON.parse('{"settings":{"enabled":"yes","wholeVault":1,"interval":-1,"roots":[42,"../private","Allowed"]},"ledger":{"__proto__":"bad","ok":"hash"},"history":[null,{"source":1},{"source":"ok","state":"Importada","time":1}]}'));
+ await p.onload();a.equal(p.settings.enabled,false);a.equal(p.settings.wholeVault,false);a.equal(p.settings.interval,120);
+ a.deepEqual(Array.from(p.settings.roots),['Allowed']);a.equal(Object.getPrototypeOf(p.ledger),null);a.equal(p.ledger.ok,'hash');a.equal(p.history.length,1);
+});
+test('respuesta de relay inválida no toca la bóveda ni guarda credenciales',async()=>{
+ for(const response of [null,[],{jobs:[{version:1,id:'x',path:23,content:'x'}]},{jobs:'bad'}]){
+  const {p}=harness({},async()=>({status:200,json:response}));p.settings.relay=p.settings.boundRelay='https://relay.example';p.settings.enabled=true;
+  p.app.vault.getAbstractFileByPath=()=>a.fail('No vault access before validation');
+  await a.rejects(p.pollRelay());
+ }
+});
+test('buscar nota solo recorre árboles autorizados y excluye configuración personalizada',async()=>{
+ const {p,Folder,File}=harness();const allowed=new Folder('Allowed'),privateFolder=new Folder('Private'),config=new Folder('Allowed/config');
+ const target=new File('Allowed/note.md');allowed.children=[target,config];config.children=[new File('Allowed/config/secret.md')];
+ p.settings.roots=['Allowed'];let reads=[];
+ p.app.vault={configDir:'Allowed/config',getAbstractFileByPath:path=>path==='Allowed'?allowed:privateFolder,cachedRead:async file=>{reads.push(file.path);return 'content';},getMarkdownFiles:()=>a.fail('No global enumeration')};
+ const {digest}=require('./core.cjs');const entry={source:'x',state:'Importada',time:1,contentHash:await digest('content')};
+ a.equal(await p.resolveNote(entry),target);a.deepEqual(reads,['Allowed/note.md']);
+});
+test('ajustes declarativos exponen búsqueda y actualizan mediante API pública',async()=>{
+ const {p,tabs}=harness();await p.onload();const tab=tabs[0];const definitions=tab.getSettingDefinitions();
+ a.ok(definitions.some(d=>d.name==='Carpetas permitidas'&&d.aliases.includes('Destino por defecto')));
+ a.ok(definitions.some(d=>d.name==='Importar solicitudes'));
+ a.equal(Object.hasOwn(Object.getPrototypeOf(tab),'display'),false);
+});
+
+test('revocar permiso durante creación de carpetas GitHub impide escribir la nota',async()=>{
+ const job={version:1,id:'revoke-in-flight',path:'Allowed/new/a.md',content:'text'};
+ const {p,document}=harness({},async request=>({status:200,headers:{},json:request.url.includes('/contents/')?[{type:'file',name:'a.json',sha:'a'.repeat(40),size:100}]:{encoding:'base64',size:100,content:Buffer.from(JSON.stringify(job)).toString('base64')}}));
+ document.hidden=false;p.settings.transport='github';p.settings.repository='owner/repo';p.settings.enabled=true;p.settings.roots=['Allowed'];
+ p.app.vault={configDir:'.obsidian',getAbstractFileByPath:()=>null,createFolder:async()=>{p.settings.roots=[];},create:async()=>a.fail('Revoked note must not be written')};
+ await p.poll(true);a.equal(p.history[0].state,'Bloqueada');a.equal(p.ledger[job.id],undefined);
 });

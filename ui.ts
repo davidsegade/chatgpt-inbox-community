@@ -53,7 +53,7 @@ export class SetupModal extends Modal {
         el.createEl('p',{text:'Elige carpetas en el paso 2 antes de emparejar. Usa un relay HTTPS de confianza. El operador puede ver las notas en tránsito. El relay guarda temporalmente las solicitudes. La conexión puede revocarse en cualquier momento. No compartas el código de emparejamiento.'});
         new Setting(el).setName('Dirección del relay').addText(t=>t.setPlaceholder('https://tu-relay.example').setValue(this.plugin.settings.relay).onChange(async v=>{this.plugin.settings.relay=v.trim();this.pairCode='';await this.plugin.persist();}));
         new Setting(el).setName('Secreto del dispositivo').setDesc('Usa un nombre distinto por dispositivo; no sincronices las credenciales. Solo minúsculas, números y guiones.').addText(t=>t.setValue(this.plugin.settings.relaySecret).onChange(async v=>{try{this.plugin.settings.relaySecret=secretId(v);this.pairCode='';await this.plugin.persist();}catch(e){new Notice((e as Error).message);}}));
-        new Setting(el).setName('Conectar con ChatGPT').setDesc('Añade la URL del relay terminada en /mcp como servidor MCP en ChatGPT web, con OAuth. Pega el código solo en la página de autorización del relay.').addButton(b=>b.setButtonText('Obtener código').onClick(async()=>{try{this.pairCode=await this.plugin.pairRelay();this.render();}catch(e){new Notice((e as Error).message);}})).addButton(b=>b.setButtonText('Revocar conexión').onClick(async()=>{try{await this.plugin.revokeRelay();this.pairCode='';this.render();}catch(e){new Notice((e as Error).message);}}));
+        new Setting(el).setName('Conectar con ChatGPT').setDesc('Añade la URL del relay terminada en /mcp como servidor MCP en ChatGPT web, con autorización del servidor. Pega el código solo en la página de autorización del relay.').addButton(b=>b.setButtonText('Obtener código').onClick(async()=>{try{this.pairCode=await this.plugin.pairRelay();this.render();}catch(e){new Notice((e as Error).message);}})).addButton(b=>b.setButtonText('Revocar conexión').onClick(async()=>{try{await this.plugin.revokeRelay();this.pairCode='';this.render();}catch(e){new Notice((e as Error).message);}}));
         if(this.pairCode){const code=el.createEl('textarea');code.value=this.pairCode;code.readOnly=true;code.setAttribute('aria-label','Código de emparejamiento, caduca en cinco minutos');el.createEl('p',{text:'Código de un solo uso, válido 5 minutos. No lo pegues en una conversación.'});}
       }else{
       el.createEl('h3',{text:'1. Conectar GitHub en este dispositivo'});
@@ -80,7 +80,7 @@ export class SetupModal extends Modal {
       el.createEl('p',{text:'Al activar, las solicitudes anteriores aún no entregadas también se importarán si están permitidas. Las notas distintas existentes se conservan.'});
       if(this.plugin.settings.transport==='lite'){el.createEl('p',{text:'Lite está listo: vuelve al paso 1 para generar un enlace. No activa recepción automática.'});}
       else {new Setting(el).setName('Activar recepción en este ajuste').setDesc('Se guarda con la configuración del plugin; La sincronización externa puede copiar ajustes entre dispositivos. El secreto debe existir en cada uno.').addButton(b=>b.setButtonText('Comprobar y activar').setCta().setDisabled(this.busy||(!this.plugin.settings.wholeVault&&this.plugin.settings.roots.length===0)).onClick(async()=>{
-        this.busy=true;this.render();try{await this.plugin.checkConnection();if(this.closed||this.plugin.stopped)return;this.plugin.settings.enabled=true;await this.plugin.persist();new Notice('ChatGPT Inbox Community preparado.');this.close();await this.plugin.poll(true);new InboxModal(this.plugin).open();}catch(e){this.result=e instanceof Error?e.message:'No se pudo activar.';this.busy=false;this.render();}
+        this.busy=true;this.render();try{await this.plugin.checkConnection();if(this.closed||this.plugin.stopped)return;this.plugin.settings.enabled=true;await this.plugin.persist();new Notice('Conexión preparada.');this.close();await this.plugin.poll(true);new InboxModal(this.plugin).open();}catch(e){this.result=e instanceof Error?e.message:'No se pudo activar.';this.busy=false;this.render();}
       }));
       if(this.result)el.createEl('p',{text:this.result});}
       new Setting(el).addButton(b=>b.setButtonText('Cerrar sin activar').onClick(()=>this.close()));
@@ -99,7 +99,7 @@ export class InboxModal extends Modal {
   render(){if(this.closed)return;const el=this.contentEl;el.empty();this.setTitle('Bandeja de ChatGPT Community');
     el.createEl('p',{text:this.plugin.status});
     new Setting(el).addButton(b=>b.setButtonText(this.plugin.running?'Comprobando…':'Recibir ahora').setDisabled(this.plugin.running).setCta().onClick(async()=>{const run=this.plugin.poll(true);this.render();await run;this.render();})).addButton(b=>b.setButtonText('Configurar').onClick(()=>{this.close();new SetupModal(this.plugin).open();}));
-    if(!this.plugin.history.length)el.createEl('p',{text:'Todavía no hay entregas registradas en este historial. Pulsa Recibir ahora. El registro de deduplicación de versiones anteriores se conserva.'});
+    if(!this.plugin.history.length)el.createEl('p',{text:'Todavía no hay entregas registradas en este historial. Pulsa recibir ahora. El registro de deduplicación de versiones anteriores se conserva.'});
     for(const item of [...this.plugin.history].reverse()){
       const row=new Setting(el).setName(item.path||item.source).setDesc(`${item.state} · ${new Date(item.time).toLocaleString()}${item.detail?' · '+item.detail:''}`);
       if(item.path&&(item.state==='Importada'||item.state==='Ya entregada'))row.addButton(b=>b.setButtonText('Abrir nota').onClick(async()=>{
@@ -125,7 +125,7 @@ export class InstructionsModal extends Modal {
   }
   private showInstruction(text:string){
     const area=this.contentEl.createEl('textarea');area.value=text;area.rows=12;area.setAttribute('aria-label','Instrucción para copiar');area.addClass('chatgpt-inbox-instructions');
-    new Setting(this.contentEl).addButton(b=>b.setButtonText('Copiar').setCta().onClick(async()=>{try{await navigator.clipboard.writeText(text);new Notice('Instrucción copiada.');}catch{area.focus();area.select();new Notice('Selecciona y copia el texto.');}}));
+    new Setting(this.contentEl).addButton(b=>b.setButtonText('Seleccionar para copiar').onClick(()=>{area.focus();area.select();new Notice('Texto seleccionado. Usa copiar en el menú del dispositivo.');}));
   }
   onClose(){this.contentEl.empty();}
 }

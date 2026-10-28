@@ -75,3 +75,7 @@ test('sin fuente aleatoria segura se rechaza generar identificadores',()=>{
  vm.runInNewContext(fs.readFileSync(require.resolve('./core.cjs'),'utf8'),{module:mod,exports:mod.exports,TextEncoder,Uint8Array});
  a.throws(()=>mod.exports.randomToken(),/aleatorio seguro/);
 });
+
+test('sobres JSON primitivos, arrays y campos no tipados se rechazan',()=>{
+ for(const value of [null,1,[],{version:1,id:'x',path:23,content:'text'},{version:1,id:'x',path:'Allowed/a.md',content:[] }])a.throws(()=>c.parseJob(JSON.stringify(value),['Allowed'],'.obsidian'));
+});

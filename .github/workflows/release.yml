@@ -1,0 +1,30 @@
+name: Prepare attested draft release
+on:
+  push:
+    tags: ['*']
+permissions:
+  contents: read
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: node -e "if (process.env.GITHUB_REF_NAME !== require('./manifest.json').version) process.exit(1)"
+      - run: npm run package:community -- /tmp/community-release
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: /tmp/community-release/release-assets/*
+      - name: Create draft with individual install assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" /tmp/community-release/release-assets/* --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file RELEASE-NOTES.md

@@ -18,7 +18,9 @@ Obsidian 1.14.5 or later. The plugin is built for desktop and mobile, without No
 
 ## Installation
 
-Until this project is accepted in the Obsidian Community directory, install it manually in a disposable test vault:
+The plugin is listed in the Obsidian Community directory. Search for **ChatGPT Inbox Community** in Community plugins, or open https://community.obsidian.md/plugins/chatgpt-inbox-community . It has not been manually reviewed by Obsidian staff.
+
+For a candidate build, install it manually in a disposable test vault:
 
 1. Download the individual `main.js`, `manifest.json` and `styles.css` assets from the GitHub release. Source archives alone are not installable assets.
 2. Place them in `.obsidian/plugins/chatgpt-inbox-community/` in that vault (or the corresponding folder under its custom configuration directory).
@@ -62,7 +64,7 @@ Pending content expires after 24 hours and is removed from the active store at d
 
 ## Status and development
 
-Version 0.4.1 is prepared for public review; a GitHub release is not approval by the Obsidian directory. Desktop acceptance was performed on Obsidian 1.14.5. A user reported the configured iPhone flow working; the exact iOS/Obsidian version and the full physical-device acceptance matrix remain to be recorded. See [acceptance evidence](AUDIT.md) and the [submission checklist](COMMUNITY.md).
+Version 0.4.2 is listed in the Community directory; 0.4.3 is a correction candidate until its release and directory scan are verified. Directory listing does not imply manual approval. Desktop acceptance was performed on Obsidian 1.14.5. A user reported the configured iPhone flow working; the exact iOS/Obsidian version and the full physical-device acceptance matrix remain to be recorded. See [acceptance evidence](AUDIT.md) and the [submission checklist](COMMUNITY.md).
 
 Build from source with Node.js 24:
 

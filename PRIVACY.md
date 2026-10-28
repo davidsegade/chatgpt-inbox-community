@@ -60,3 +60,9 @@ Obsidian must be open and active to receive. Sync to another device is independe
 The public plugin ID is chatgpt-inbox-community, separate from the private
 chatgpt-inbox plugin. Its settings are loaded from its own plugin directory;
 no private settings or credentials are imported automatically.
+
+## Scope and clipboard correction in 0.4.3
+
+The folder picker enumerates local file/folder metadata to let the user choose a destination. It does not read note content or send the listing to the relay. History lookup traverses only authorized folder subtrees (the whole vault only when explicitly authorized), skips configuration paths, and checks authorization again before each content read. The picker capability disclosure is therefore expected.
+
+The plugin no longer uses clipboard APIs. “Seleccionar para copiar” selects the generated instruction in a local text area; the user copies it through the operating system menu on desktop or mobile. Clipboard contents are never read.
