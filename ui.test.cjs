@@ -19,7 +19,7 @@ function harness(){
  }
  class Setting{
   constructor(el){this.el=el;this.buttons=[];this.texts=[];el.settings.push(this);}
-  setName(name){this.name=name;return this;}setDesc(){return this;}setHeading(){return this;}
+  setName(name){this.name=name;return this;}setDesc(desc){this.desc=desc;return this;}setHeading(){return this;}
   addButton(fn){const c=new Control();this.buttons.push(c);fn(c);return this;}
   addText(fn){const c=new Control();this.texts.push(c);fn(c);return this;}
   addDropdown(fn){fn(new Control());return this;}addToggle(fn){fn(new Control());return this;}
@@ -28,11 +28,11 @@ function harness(){
  class Modal{constructor(app){this.app=app;this.contentEl=new Element();}setTitle(t){this.title=t;}close(){this.onClose();}open(){this.onOpen();}}
  const api={Modal,Setting,FuzzySuggestModal:class{},TFile:class{},TFolder:class{},SecretComponent:Control,Notice:class{}};
  const mod={exports:{}};vm.runInNewContext(fs.readFileSync('ui.cjs','utf8'),{module:mod,exports:mod.exports,require:name=>{assert.equal(name,'obsidian');return api;},TextEncoder,URL,Uint8Array});
- const plugin={app:{vault:{getName:()=> 'Community Test',configDir:'.obsidian',getAllLoadedFiles:()=>[]}},settings:{transport:'lite',wholeVault:false,roots:['ChatGPT Inbox'],defaultFolder:'ChatGPT Inbox',relay:'',relaySecret:'test-secret'},persist:async()=>{},permissionsChanged:async()=>{},stopped:false};
+ const plugin={app:{vault:{getName:()=> 'Community Test',configDir:'.obsidian',getAllLoadedFiles:()=>[]}},settings:{transport:'lite',wholeVault:false,roots:['ChatGPT Inbox'],defaultFolder:'ChatGPT Inbox',relay:'',relaySecret:'test-secret'},persist:async()=>{},permissionsChanged:async()=>{},stopped:false,onUpdate:()=>()=>{},setupChecks:()=>[],receptionSummary:()=>({label:'Preparada',help:'Prueba'}),history:[],status:'Sin comprobar',lastSuccess:0,diagnosticReport:()=>({schema:1})};
  const setup=new mod.exports.SetupModal(plugin);
  const buttons=modal=>modal.contentEl.settings.flatMap(s=>s.buttons);
  const click=async(modal,label)=>{const b=buttons(modal).find(b=>b.text===label);assert.ok(b,`Missing button: ${label}`);assert.notEqual(b.disabled,true);await b.click();};
- return {plugin,setup,InstructionsModal:mod.exports.InstructionsModal,buttons,click};
+ return {plugin,setup,InstructionsModal:mod.exports.InstructionsModal,InboxModal:mod.exports.InboxModal,DiagnosticsModal:mod.exports.DiagnosticsModal,buttons,click};
 }
 
 test('Lite permite volver desde el último paso y cerrar sin activar recepción',async()=>{
@@ -75,4 +75,28 @@ test('instrucciones seleccionan texto para copia nativa sin usar portapapeles',a
  await h.click(modal,'Seleccionar para copiar');const area=modal.contentEl.nodes.find(n=>n.tag==='textarea');
  assert.equal(area.focused,true);assert.equal(area.selected,true);
  assert.doesNotMatch(fs.readFileSync('main.js','utf8'),/navigator\.clipboard/);
+});
+
+test('bandeja separa entrega verificada de recibo pendiente y ofrece diagnóstico',()=>{
+ const h=harness();h.plugin.history=[{source:'pending',path:'Inbox/Test.md',state:'Guardada sin recibo',receiptPending:true,time:1},{source:'done',path:'Inbox/Done.md',state:'Importada',time:2}];
+ const modal=new h.InboxModal(h.plugin);modal.onOpen();
+ const pending=modal.contentEl.settings.find(row=>row.name==='Inbox/Test.md');assert.match(pending.desc,/Esperando confirmación/);assert.match(pending.desc,/falta el recibo/);
+ assert.ok(pending.buttons.some(button=>button.text==='Abrir nota'));
+ const done=modal.contentEl.settings.find(row=>row.name==='Inbox/Done.md');assert.match(done.desc,/Entregada/);
+ assert.ok(h.buttons(modal).some(button=>button.text==='Ver diagnóstico'));
+});
+test('obtener código impide pulsaciones concurrentes y restaura controles al acabar',async()=>{
+ const h=harness();h.plugin.settings.transport='relay';let complete;h.plugin.pairRelay=()=>new Promise(resolve=>complete=resolve);h.setup.onOpen();
+ const run=h.click(h.setup,'Obtener código');assert.equal(h.setup.busy,true);assert.equal(h.buttons(h.setup).find(button=>button.text==='Obtener código').disabled,true);
+ complete('test-only-code');await run;assert.equal(h.setup.busy,false);assert.equal(h.setup.pairCode,'test-only-code');
+});
+test('diagnóstico se muestra para revisión y solo permite selección local',async()=>{
+ const h=harness();const modal=new h.DiagnosticsModal(h.plugin);modal.onOpen();
+ const area=modal.contentEl.nodes.find(node=>node.tag==='textarea');assert.equal(area.readOnly,true);assert.deepEqual(JSON.parse(area.value),{schema:1});
+ await h.click(modal,'Seleccionar informe');assert.equal(area.selected,true);assert.equal(area.focused,true);
+});
+test('paso de activación explica el destino pendiente y no promete entrega',()=>{
+ const h=harness();h.plugin.settings.transport='relay';h.plugin.setupChecks=()=>[{name:'Carpeta de destino autorizada',ok:false,help:'Elige una carpeta.'}];h.setup.step=2;h.setup.onOpen();
+ assert.ok(h.setup.contentEl.nodes.some(node=>String(node.text).includes('○ Carpeta de destino autorizada')));
+ assert.ok(h.setup.contentEl.nodes.some(node=>String(node.text).includes('envía después una nota desde tu cliente')));
 });

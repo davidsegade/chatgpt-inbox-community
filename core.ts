@@ -1,3 +1,4 @@
+export const CONNECTION_TEST_CONTENT='# Prueba de conexión\n\nEsta nota confirma el recorrido del relay hasta Obsidian. La entrega solo se confirma con un recibo verificado.\n';
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

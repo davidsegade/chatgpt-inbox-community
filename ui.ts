@@ -1,3 +1,4 @@
+import {failureText,historyPresentation,ReceptionError} from './reception';
 import {App, Modal, FuzzySuggestModal, TFolder, Setting, SecretComponent, Notice, SettingDefinitionRender} from 'obsidian';
 import {openInboxNote} from './navigation';
 import type Inbox from './main';
@@ -43,10 +44,11 @@ export function folderControls(el:HTMLElement,plugin:Inbox,changed:()=>void){
 }
 
 export class SetupModal extends Modal {
+  private unsubscribe?:()=>void;
   step=0; result=''; busy=false; closed=false; pairCode=''; liteTitle='Mi primera nota'; liteContent='# Mi primera nota';
   constructor(private plugin:Inbox){super(plugin.app);}
-  onOpen(){this.closed=false;this.render();}
-  onClose(){this.closed=true;this.contentEl.empty();}
+  onOpen(){this.closed=false;this.unsubscribe=this.plugin.onUpdate(()=>this.render());this.render();}
+  onClose(){this.closed=true;this.unsubscribe?.();this.unsubscribe=undefined;this.contentEl.empty();}
   render(){if(this.closed)return;const el=this.contentEl;el.empty();this.setTitle('Configurar ChatGPT Inbox Community');
     el.createEl('p',{text:`Paso ${this.step+1} de 3`});
     if(this.step===0){
@@ -60,7 +62,10 @@ export class SetupModal extends Modal {
         el.createEl('p',{text:'Elige carpetas en el paso 2 antes de emparejar. Usa un relay HTTPS de confianza. El operador puede ver las notas en tránsito. El relay guarda temporalmente las solicitudes. La conexión puede revocarse en cualquier momento. No compartas el código de emparejamiento.'});
         new Setting(el).setName('Dirección del relay').addText(t=>t.setPlaceholder('https://tu-relay.example').setValue(this.plugin.settings.relay).onChange(async v=>{this.plugin.settings.relay=v.trim();this.pairCode='';await this.plugin.persist();}));
         new Setting(el).setName('Secreto del dispositivo').setDesc('Usa un nombre distinto por dispositivo; no sincronices las credenciales. Solo minúsculas, números y guiones.').addText(t=>t.setValue(this.plugin.settings.relaySecret).onChange(async v=>{try{this.plugin.settings.relaySecret=secretId(v);this.pairCode='';await this.plugin.persist();}catch(e){new Notice((e as Error).message);}}));
-        new Setting(el).setName('Conectar con ChatGPT').setDesc('Añade la URL del relay terminada en /mcp como servidor MCP en ChatGPT web, con autorización del servidor. Pega el código solo en la página de autorización del relay.').addButton(b=>b.setButtonText('Obtener código').onClick(async()=>{try{this.pairCode=await this.plugin.pairRelay();this.render();}catch(e){new Notice((e as Error).message);}})).addButton(b=>b.setButtonText('Revocar conexión').onClick(async()=>{try{await this.plugin.revokeRelay();this.pairCode='';this.render();}catch(e){new Notice((e as Error).message);}}));
+        new Setting(el).setName('Conectar con ChatGPT').setDesc('Añade la URL del relay terminada en /mcp como servidor MCP en ChatGPT web, con autorización del servidor. Pega el código solo en la página de autorización del relay.').addButton(b=>b.setButtonText('Obtener código').setDisabled(this.busy).onClick(async()=>{this.busy=true;this.render();try{this.pairCode=await this.plugin.pairRelay();}catch(e){new Notice(e instanceof ReceptionError?failureText(e.code):'No se pudo preparar el código. Revisa conexión y destino permitido.');}finally{this.busy=false;this.render();}})).addButton(b=>b.setButtonText('Revocar conexión').setDisabled(this.busy).onClick(async()=>{this.busy=true;this.render();try{await this.plugin.revokeRelay();this.pairCode='';}catch(e){new Notice(e instanceof ReceptionError?failureText(e.code):'No se pudo revocar la conexión. Vuelve a intentarlo.');}finally{this.busy=false;this.render();}}));
+        new Setting(el).setName('Comprobar conexión del dispositivo').setDesc(this.result||'Comprueba servidor, autorización y carpeta de destino; no importa notas.').addButton(b=>b.setButtonText(this.busy?'Comprobando…':'Comprobar conexión').setDisabled(this.busy).onClick(async()=>{
+          this.busy=true;this.render();try{const count=await this.plugin.checkConnection();this.result=`Conexión comprobada. ${count} solicitud(es) disponibles.`;}catch(error){this.result=error instanceof ReceptionError?failureText(error.code):'Revisa la dirección, la autorización y la carpeta de destino.';}finally{this.busy=false;this.render();}
+        }));
         if(this.pairCode){const code=el.createEl('textarea');code.value=this.pairCode;code.readOnly=true;code.setAttribute('aria-label','Código de emparejamiento, caduca en cinco minutos');el.createEl('p',{text:'Código de un solo uso, válido 5 minutos. No lo pegues en una conversación.'});}
       }else{
       el.createEl('h3',{text:'1. Conectar GitHub en este dispositivo'});
@@ -82,12 +87,14 @@ export class SetupModal extends Modal {
       if(this.plugin.settings.transport==='lite')el.createEl('p',{text:'En Lite, la carpeta elegida es el destino del enlace. Los permisos del plugin no se aplican a ese enlace.'});
       folderControls(el,this.plugin,()=>this.render());
     }else{
-      el.createEl('h3',{text:'3. Listo para recibir'});
+      el.createEl('h3',{text:'3. Comprobar y activar'});
       el.createEl('p',{text:`Ámbito: ${this.plugin.settings.wholeVault?'toda la bóveda actual':this.plugin.settings.roots.join(', ')||'ninguna'}. Destino por defecto: ${this.plugin.settings.defaultFolder}. Comprueba la conexión antes de activar. La sincronización de la bóveda no se modifica.`});
+      for(const check of this.plugin.setupChecks())el.createEl('p',{text:`${check.ok?'✓':'○'} ${check.name}${check.ok?'':': '+check.help}`});
+      el.createEl('p',{text:'Después de activar, puedes crear una nota de prueba desde la bandeja y comprobar su recibo. Esta prueba comprueba relay → Obsidian; envía después una nota desde tu cliente para verificar también ese recorrido.'});
       el.createEl('p',{text:'Al activar, las solicitudes anteriores aún no entregadas también se importarán si están permitidas. Las notas distintas existentes se conservan.'});
       if(this.plugin.settings.transport==='lite'){el.createEl('p',{text:'Lite está listo: vuelve al paso 1 para generar un enlace. No activa recepción automática.'});}
       else {new Setting(el).setName('Activar recepción en este ajuste').setDesc('Se guarda con la configuración del plugin; La sincronización externa puede copiar ajustes entre dispositivos. El secreto debe existir en cada uno.').addButton(b=>b.setButtonText('Comprobar y activar').setCta().setDisabled(this.busy||(!this.plugin.settings.wholeVault&&this.plugin.settings.roots.length===0)).onClick(async()=>{
-        this.busy=true;this.render();try{await this.plugin.checkConnection();if(this.closed||this.plugin.stopped)return;this.plugin.settings.enabled=true;await this.plugin.persist();new Notice('Conexión preparada.');this.close();await this.plugin.poll(true);new InboxModal(this.plugin).open();}catch(e){this.result=e instanceof Error?e.message:'No se pudo activar.';this.busy=false;this.render();}
+        this.busy=true;this.render();try{await this.plugin.checkConnection();if(this.closed||this.plugin.stopped)return;this.plugin.settings.enabled=true;await this.plugin.persist();new Notice('Conexión preparada.');this.close();await this.plugin.poll(true);new InboxModal(this.plugin).open();}catch(e){this.result=e instanceof ReceptionError?failureText(e.code):'No se pudo activar. Revisa la conexión y el destino permitido.';this.busy=false;this.render();}
       }));
       if(this.result)el.createEl('p',{text:this.result});}
       new Setting(el).addButton(b=>b.setButtonText('Cerrar sin activar').onClick(()=>this.close()));
@@ -104,18 +111,41 @@ export class InboxModal extends Modal {
   onOpen(){this.closed=false;this.unsubscribe=this.plugin.onUpdate(()=>this.render());this.render();}
   onClose(){this.closed=true;this.unsubscribe?.();this.unsubscribe=undefined;this.contentEl.empty();}
   render(){if(this.closed)return;const el=this.contentEl;el.empty();this.setTitle('Bandeja de ChatGPT Community');
+    const summary=this.plugin.receptionSummary();
+    el.createEl('h3',{text:summary.label});el.createEl('p',{text:summary.help});
     el.createEl('p',{text:this.plugin.status});
+    if(this.plugin.lastSuccess)el.createEl('p',{text:'Última conexión comprobada: '+new Date(this.plugin.lastSuccess).toLocaleString()});
+    const retry=Math.max(this.plugin.nextRetry,this.plugin.retryAfter);if(retry>Date.now())el.createEl('p',{text:'Próximo reintento automático a partir de: '+new Date(retry).toLocaleTimeString()});
     new Setting(el).addButton(b=>b.setButtonText(this.plugin.running?'Comprobando…':'Recibir ahora').setDisabled(this.plugin.running).setCta().onClick(async()=>{const run=this.plugin.poll(true);this.render();await run;this.render();})).addButton(b=>b.setButtonText('Configurar').onClick(()=>{this.close();new SetupModal(this.plugin).open();}));
+    if(this.plugin.settings.transport==='relay'){
+      new Setting(el).setName('Nota de prueba').setDesc('Crea una nota nueva en el destino permitido y consulta el recibo del relay. No comprueba por sí sola que tu cliente pueda enviar notas.').addButton(b=>b.setButtonText(this.plugin.testing?'Verificando…':this.plugin.deliveryTest?.state==='delivered'?'Crear otra nota de prueba':'Crear nota de prueba y verificar').setDisabled(this.plugin.running||this.plugin.testing||!this.plugin.settings.enabled).onClick(async()=>{
+        try{const state=await this.plugin.testDelivery();new Notice(state==='delivered'?'Nota de prueba entregada: recibo del relay verificado.':state==='conflict'?'La prueba encontró un conflicto. Se conserva el archivo existente.':'La prueba todavía espera confirmación. Pulsa recibir ahora y reintenta la verificación.');}catch(error){new Notice(error instanceof ReceptionError?failureText(error.code):'No se pudo comprobar la prueba. Revisa conexión y destino.');}finally{this.render();}
+      }));
+      if(this.plugin.deliveryTest)el.createEl('p',{text:`Última prueba: ${this.plugin.deliveryTest.state==='delivered'?'recibo confirmado':this.plugin.deliveryTest.state==='conflict'?'conflicto':'sin entrega confirmada'}.`});
+    }
+    new Setting(el).setName('Ayuda con la conexión').addButton(b=>b.setButtonText('Ver diagnóstico').onClick(()=>new DiagnosticsModal(this.plugin).open()));
     if(!this.plugin.history.length)el.createEl('p',{text:'Todavía no hay entregas registradas en este historial. Pulsa recibir ahora. El registro de deduplicación de versiones anteriores se conserva.'});
     for(const item of [...this.plugin.history].reverse()){
-      const row=new Setting(el).setName(item.path||item.source).setDesc(`${item.state} · ${new Date(item.time).toLocaleString()}${item.detail?' · '+item.detail:''}`);
-      if(item.path&&(item.state==='Importada'||item.state==='Ya entregada'))row.addButton(b=>b.setButtonText('Abrir nota').onClick(async()=>{
+      const presentation=historyPresentation(item.state,item.receiptPending);
+      const row=new Setting(el).setName(item.path||item.source).setDesc(`${presentation.label} · ${new Date(item.time).toLocaleString()} · ${presentation.help}${item.detail?' · '+item.detail:''}`);
+      if(item.path&&(item.state==='Importada'||item.state==='Ya entregada'||item.state==='Guardada sin recibo'))row.addButton(b=>b.setButtonText('Abrir nota').onClick(async()=>{
         try{const file=await this.plugin.resolveNote(item);await openInboxNote(this.app,file.path,()=>this.close());}
         catch(e){new Notice(e instanceof Error?e.message:'No se pudo localizar la nota.');}
       }));
     }
     el.createEl('p',{text:'Últimas 100 solicitudes. El historial guarda rutas y estados, nunca el contenido ni el token. Los conflictos se resuelven enviando una solicitud con otro nombre.'});
   }
+}
+
+export class DiagnosticsModal extends Modal {
+  constructor(private plugin:Inbox){super(plugin.app);}
+  onOpen(){
+    this.setTitle('Diagnóstico de recepción');
+    this.contentEl.createEl('p',{text:'Este informe incluye versiones, estados, fechas de comprobación y contadores. No incluye notas, rutas, nombres de carpetas, bóveda, servidor, repositorio, códigos ni credenciales. No se envía automáticamente.'});
+    const area=this.contentEl.createEl('textarea');area.value=JSON.stringify(this.plugin.diagnosticReport(),null,2);area.rows=16;area.readOnly=true;area.addClass('chatgpt-inbox-instructions');area.setAttribute('aria-label','Diagnóstico para revisar');
+    new Setting(this.contentEl).addButton(b=>b.setButtonText('Seleccionar informe').onClick(()=>{area.focus();area.select();}));
+  }
+  onClose(){this.contentEl.empty();}
 }
 
 export class InstructionsModal extends Modal {

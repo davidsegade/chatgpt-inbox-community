@@ -97,6 +97,18 @@ test('PostgreSQL real: proceso, crash, roles, fallo durable, lease y retención'
  await stop();const stored=await state();for(const[,d]of stored.devices)for(const[,job]of d.jobs)if(job.state==='queued')job.expires=Date.now()-1000;
  await db.query('UPDATE chatgpt_inbox.relay_snapshot SET state=$1',[JSON.stringify(stored)]);await start();
  assert.ok(!JSON.stringify(await state()).includes(note.contenido));
+ // The connection test uses the same durable queue/receipt state as real notes.
+ const testKey='connection-test-postgres-12345678',testPath=`Inbox/Prueba de conexión-${testKey}.md`;
+ const testJob=await(await post('/plugin/test',{key:testKey,path:testPath},pair.plugin_token)).json();assert.equal(testJob.state,'queued');
+ await stop();await start();
+ assert.equal((await(await post('/plugin/test',{key:testKey,path:testPath},pair.plugin_token)).json()).id,testJob.id,'test key survives SIGKILL without another job');
+ assert.equal((await post('/plugin/receipt',{id:testJob.id,state:'delivered'},pair.plugin_token)).status,200);
+ await stop();await start();assert.equal((await(await post('/plugin/test',{key:testKey,path:testPath},pair.plugin_token)).json()).state,'delivered');
+ assert.ok(!JSON.stringify(await state()).includes('Esta nota confirma el recorrido'),'test content is removed after confirmed delivery');
+ await rights(false);const failedTestKey='connection-test-postgres-87654321';
+ assert.equal((await post('/plugin/test',{key:failedTestKey,path:`Inbox/Prueba de conexión-${failedTestKey}.md`},pair.plugin_token)).status,503);
+ await rights(true);await stop();await start();
+ assert.equal((await state()).devices[0][1].jobs.some(([,job])=>job.key===failedTestKey),false,'failed test enqueue does not leak into a later snapshot');
  assert.equal((await post('/plugin/revoke',{},pair.plugin_token)).status,200);
  await stop();await start();assert.equal((await post('/plugin/poll',{folders:['Inbox']},pair.plugin_token)).status,401);
  // The runtime role must have no privilege on another schema and no PUBLIC grant.
@@ -114,5 +126,5 @@ test('PostgreSQL real: proceso, crash, roles, fallo durable, lease y retención'
  await db.query(`REVOKE SELECT ON chatgpt_inbox.relay_snapshot FROM ${role}`);
  await start(503);assert.equal((await post('/pair',{folders:['Inbox']})).status,503);
  await db.query(`GRANT SELECT ON chatgpt_inbox.relay_snapshot TO ${role}`);await stop();await start();
- console.log('Verified PostgreSQL '+(await db.query('SHOW server_version')).rows[0].server_version+'; real lease handover, SIGTERM shutdown, SIGKILL restarts, refresh rotation/rollback, restricted role, failed saves, exclusive lease, expiry, connection loss.');
+ console.log('Verified PostgreSQL '+(await db.query('SHOW server_version')).rows[0].server_version+'; real lease handover, SIGTERM shutdown, SIGKILL restarts, refresh rotation/rollback, restricted role, failed saves, exclusive lease, expiry, connection-test persistence/rollback, connection loss.');
 });

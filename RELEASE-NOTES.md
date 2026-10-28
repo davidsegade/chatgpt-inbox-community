@@ -1,3 +1,15 @@
+# 0.4.4 — reception reliability candidate
+
+- Separate verified local notes awaiting a relay receipt from confirmed delivery, conflicts and blocked requests.
+- Cancel outstanding receiver waits on background/offline/unload, fence stale mode results, bound network requests to 20 seconds and retry transient failures with capped backoff.
+- Respect the normal interval on repeated focus events and resume reception after interrupted checks.
+- Check the authorized default destination and available client authorization during setup; prevent concurrent pairing button actions.
+- Add an explicit synthetic note test with persistent idempotency key, normal scope/capacity/retention limits, real receipt lookup and local content/identity verification. Requires the separate relay to be updated to 0.4.4; older relays retain ordinary reception.
+- Add a local diagnostic report containing only versions, states, timestamps and counts, with review/selection and no automatic upload.
+- Correct the published 0.4.3 documentation state and record mobile acceptance limits.
+
+147 automated tests, full Obsidian lint/typecheck/build and a native Obsidian 1.14.5 relay/client/receipt acceptance passed locally. PostgreSQL CI is required before release. Physical iPhone acceptance remains pending. This source tree is a candidate; no 0.4.4 publication or production relay deployment is implied.
+
 # 0.4.3 — review correction candidate
 
 - Validate JSON envelopes, relay replies, GitHub listings/blobs and saved settings/history from unknown inputs before use. Preserve valid settings, secrets by identifier, receipts and create-only delivery.

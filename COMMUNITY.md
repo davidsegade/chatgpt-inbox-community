@@ -1,6 +1,6 @@
 # Community publication checklist — 27 October 2026
 
-Candidate 0.4.3. Source and install assets are prepared separately from the original mixed development repository. A GitHub release does not mean the plugin has been accepted by Obsidian.
+Candidate 0.4.4. Source and install assets are prepared separately from the original mixed development repository. A GitHub release does not mean the plugin has been accepted by Obsidian.
 
 ## Ready for repository/release review
 
@@ -23,7 +23,7 @@ Candidate 0.4.3. Source and install assets are prepared separately from the orig
 
 ## Directory status
 
-On 28 October 2026 the official directory lists `chatgpt-inbox-community`, linked to `davidsegade/chatgpt-inbox-community`, at version 0.4.2. The entry explicitly has not been manually reviewed. Version 0.4.3 remains a candidate until released and rescanned.
+On 28 October 2026 the official directory lists `chatgpt-inbox-community`, linked to `davidsegade/chatgpt-inbox-community`, at version 0.4.3, with automated review Passed. The entry explicitly has not been manually reviewed. Version 0.4.4 remains a candidate until released and rescanned. Physical-iPhone acceptance is tracked separately in MOBILE-ACCEPTANCE.md.
 
 ## Original directory submission procedure
 
