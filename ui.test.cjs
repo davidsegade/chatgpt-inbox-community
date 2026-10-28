@@ -9,7 +9,7 @@ function harness(){
   constructor(root){this.root=root||this;this.nodes=[];this.settings=[];}
   empty(){this.nodes=[];this.settings=[];}
   createEl(tag,props={}){const node=new Element(this.root);Object.assign(node,{tag,...props});this.nodes.push(node);return node;}
-  setAttribute(){}addClass(){}focus(){}select(){}
+  setAttribute(){}addClass(){}focus(){this.focused=true;}select(){this.selected=true;}
  }
  class Control{
   setValue(value){this.value=value;return this;}setPlaceholder(){return this;}
@@ -68,4 +68,11 @@ test('las instrucciones Lite piden un enlace local sin flujo GitHub ni recibo re
 test('relay conserva la activación y la navegación en el último paso',()=>{
  const h=harness();h.plugin.settings.transport='relay';h.setup.step=2;h.setup.onOpen();
  assert.ok(h.buttons(h.setup).some(b=>b.text==='Comprobar y activar'));assert.ok(h.buttons(h.setup).some(b=>b.text==='Atrás'));
+});
+
+test('instrucciones seleccionan texto para copia nativa sin usar portapapeles',async()=>{
+ const h=harness();const modal=new h.InstructionsModal(h.plugin);modal.onOpen();
+ await h.click(modal,'Seleccionar para copiar');const area=modal.contentEl.nodes.find(n=>n.tag==='textarea');
+ assert.equal(area.focused,true);assert.equal(area.selected,true);
+ assert.doesNotMatch(fs.readFileSync('main.js','utf8'),/navigator\.clipboard/);
 });

@@ -1,3 +1,19 @@
+# 0.4.3 candidate verification — 28 October 2026
+
+The official Community entry and community-plugins.json identify `davidsegade/chatgpt-inbox-community`, ID `chatgpt-inbox-community`, current listed/released version 0.4.2. The working directory `/Users/davidsegade/ChatGPT-Inbox` instead has remote `obsidian-chatgpt-test`, version 0.4.0 and uncommitted work; it was read only and not changed. This candidate starts from the clean standalone Community repository at 6f39865effb932a182bc0dcdafe7ff407f31ba88.
+
+The original 0.4.2 source rebuild matches its downloaded main.js byte for byte (SHA-256 851bf4f239456d6c08bf604f4b13c118253e83a340519723e873cd2733f096cc). Its baseline suite passes 115 tests. Local typed lint reproduces 75 unsafe errors in core.ts, main.ts and ui.ts. The official scorecard shows 81 warnings: those unsafe findings, two globalThis warnings, two settings refresh warnings, one declarative settings warning and one hardcoded configuration-directory warning. It also shows two missing-attestation observations, two deprecated display observations, vault enumeration and clipboard access. The three disclosures are runtime base64 decoding and unavailable malware/obfuscation scans. No suspicious network patterns or vulnerable dependencies were reported.
+
+The candidate passes 122 compiled regression tests, typecheck, browser build and the full Obsidian recommended lint preset with zero warnings. The local preset retains unsafe TypeScript checks, recognizes product/acronym spelling, and delegates extensionless TypeScript import resolution to tsc/esbuild. New tests cover malformed envelopes/relay data/saved state, declarative settings contracts, authorized-only history traversal, permission revocation during GitHub folder creation and native text selection without clipboard APIs. Dependency audit reports zero vulnerabilities. A global moment override fixes the older nested development SDK dependency pulled in by the lint plugin.
+
+The packager verifies consistent 0.4.3 metadata, individual main.js/manifest.json/styles.css assets and a bundle without Node/Electron imports. The release workflow prepares a draft and provenance attestations after a version tag is pushed; adding that workflow alone does not create an attestation or publish a release. CI also tests PostgreSQL with a disposable restricted-role database.
+
+Vault enumeration is retained for the explicit folder picker. History recovery now walks only authorized subtrees, deduplicates overlapping roots and rechecks authorization before each content read. GitHub writes recheck current authorization after asynchronous folder creation. No existing note upload or broader permission is added.
+
+Native desktop acceptance on Obsidian 1.14.5 used a new disposable vault on 28 October 2026: plugin 0.4.3 loaded; declarative settings and folder rows rendered correctly; searching “Destino por defecto” found the plugin setting; selecting the generated instruction focused the text area and selected the entire instruction without clipboard APIs. An initial nested-row layout failure was observed and corrected by using a real declarative group with independent folder definitions. This desktop check did not repeat live relay pairing/delivery. Physical iPhone acceptance of this candidate remains pending. The hosted Community scorecard must be checked again only after a release is published; the currently visible scorecard still describes 0.4.2.
+
+---
+
 # Acceptance evidence — 27 October 2026
 
 Candidate: ChatGPT Inbox Community 0.4.1. This document distinguishes automated tests, protocol checks, native application evidence and user reports. A successful SDK call is not treated as proof of a physical-device workflow.

@@ -1,6 +1,6 @@
 # Community publication checklist — 27 October 2026
 
-Version 0.4.1. Source and install assets are prepared separately from the original mixed development repository. A GitHub release does not mean the plugin has been accepted by Obsidian.
+Candidate 0.4.3. Source and install assets are prepared separately from the original mixed development repository. A GitHub release does not mean the plugin has been accepted by Obsidian.
 
 ## Ready for repository/release review
 
@@ -21,7 +21,11 @@ Version 0.4.1. Source and install assets are prepared separately from the origin
 - [ ] If offering a hosted relay, define its audience/costs and publish operator-specific privacy, infrastructure/log/backup retention and support policy. This release supplies a self-hosted relay, not access to the author's beta infrastructure.
 - [ ] Verify hosted TLS, database availability/lifetime and the chosen single-writer deployment process.
 
-## Directory submission
+## Directory status
+
+On 28 October 2026 the official directory lists `chatgpt-inbox-community`, linked to `davidsegade/chatgpt-inbox-community`, at version 0.4.2. The entry explicitly has not been manually reviewed. Version 0.4.3 remains a candidate until released and rescanned.
+
+## Original directory submission procedure
 
 1. Use a standalone GitHub repository whose default branch has README.md, LICENSE, manifest.json and the reviewable source at its root.
 2. Publish an unprefixed release tag equal to manifest.version and attach main.js, manifest.json and styles.css individually.

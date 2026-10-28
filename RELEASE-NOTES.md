@@ -1,3 +1,16 @@
+# 0.4.3 — review correction candidate
+
+- Validate JSON envelopes, relay replies, GitHub listings/blobs and saved settings/history from unknown inputs before use. Preserve valid settings, secrets by identifier, receipts and create-only delivery.
+- Searchable declarative settings and public update API; no deprecated display override.
+- History search traverses only authorized subtrees and rechecks scope before content reads. Folder selection still needs local metadata enumeration.
+- Remove clipboard APIs; select generated instructions for native copy on macOS/iOS.
+- Run the full Obsidian recommended lint preset and unsafe TypeScript checks in CI. TypeScript 6.0 is used because the current TypeScript ESLint parser supports versions below 6.1.
+- Pin the development dependency override for patched moment; runtime plugin bundle remains browser-only.
+- 122 automated tests, typecheck, build and lint passed locally. Desktop settings layout, settings search and native text selection were verified on Obsidian 1.14.5 in a disposable vault. Physical iPhone acceptance of this candidate is pending. PostgreSQL verification is also run by CI.
+- Add a draft-release workflow with build provenance attestations; attestations only exist after that workflow succeeds.
+
+The official 0.4.2 scorecard showed 81 warnings and 6 other observations. Base64 decoding is required for GitHub blobs. Vault enumeration remains necessary for the explicit folder picker. Unavailable malware/obfuscation scans are scanner limitations, not results this repository can certify.
+
 # ChatGPT Inbox Community 0.4.1
 
 Create Markdown notes through a paired OAuth/PKCE MCP relay, Lite links or an advanced GitHub inbox. Obsidian must be active to receive. No public hosted relay is included.

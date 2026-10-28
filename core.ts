@@ -1,3 +1,6 @@
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 export const MAX_BYTES = 131072;
 export const bytes = (s: string) => new TextEncoder().encode(s).length;
 export function safePath(value: unknown, markdown = true): string {
@@ -28,12 +31,12 @@ export interface Job { version: 1; id: string; path: string; content: string }
 // caller can validate an envelope before deciding whether to read anything.
 export function parseEnvelope(raw: string, configDir: string): Job {
   if (bytes(raw) > MAX_BYTES) throw Error('Solicitud demasiado grande');
-  const j = JSON.parse(raw);
-  if (!j || j.version !== 1 || typeof j.id !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(j.id) || typeof j.content !== 'string' || Object.keys(j).some(k => !['version','id','path','content'].includes(k))) throw Error('Solicitud no válida');
+  const j: unknown = JSON.parse(raw);
+  if (!isRecord(j) || typeof j.path !== 'string' || j.version !== 1 || typeof j.id !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(j.id) || typeof j.content !== 'string' || Object.keys(j).some(k => !['version','id','path','content'].includes(k))) throw Error('Solicitud no válida');
   if(j.content.includes('<!-- chatgpt-inbox-note:'))throw Error('El contenido utiliza un identificador reservado');
   safePath(j.path);
   if (inConfigDir(j.path, configDir)) throw Error('Ruta fuera de la lista permitida');
-  return j;
+  return {version:1,id:j.id,path:j.path,content:j.content};
 }
 export function parseJob(raw: string, roots: string[], configDir: string): Job {
   const j = parseEnvelope(raw, configDir);
@@ -83,7 +86,7 @@ export function sha256Hex(text: string): string {
 }
 export async function digest(s: string): Promise<string> {
   try {
-    const subtle = globalThis.crypto?.subtle;
+    const subtle = typeof crypto==='undefined'?undefined:crypto.subtle;
     if (subtle) return Array.from(new Uint8Array(await subtle.digest('SHA-256', new TextEncoder().encode(s)))).map(x=>x.toString(16).padStart(2,'0')).join('');
   } catch { /* Fall back to the portable implementation below. */ }
   return sha256Hex(s);
@@ -98,7 +101,7 @@ export function secretId(value: string): string {
 // A random token for device credentials. crypto.randomUUID is missing on older
 // mobile WebViews, so the identifier is rebuilt from random bytes.
 export function randomToken(): string {
-  const g = globalThis.crypto;
+  const g = typeof crypto==='undefined'?undefined:crypto;
   if (g && typeof g.randomUUID === 'function') return g.randomUUID();
   const bytes = new Uint8Array(16);
   if (g && typeof g.getRandomValues === 'function') g.getRandomValues(bytes);
