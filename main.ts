@@ -218,7 +218,7 @@ export default class Inbox extends Plugin {
     const b=await this.relayRequest('/pair',{folders:this.permittedRoots(),defaultFolder:this.settings.defaultFolder},true);
     if(typeof b.plugin_token!=='string'||typeof b.pair_code!=='string')throw Error('Respuesta de emparejamiento inválida');
     this.app.secretStorage.setSecret(secret,b.plugin_token);
-    this.settings.boundRelay=origin;this.settings.boundRelaySecret=secret;this.failureCode=null;this.failures=0;this.nextRetry=0;this.retryAfter=0;this.last=0;
+    this.settings.boundRelay=origin;this.settings.boundRelaySecret=secret;this.deliveryTest=null;this.failureCode=null;this.failures=0;this.nextRetry=0;this.retryAfter=0;this.last=0;
     await this.persist();return b.pair_code;
   }
   async revokeRelay(){await this.relayRequest('/plugin/revoke',{});this.app.secretStorage.setSecret(secretId(this.settings.relaySecret),'');this.settings.enabled=false;await this.persist();}

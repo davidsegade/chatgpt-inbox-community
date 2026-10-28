@@ -121,7 +121,8 @@ test('cambiar el nombre del secreto exige emparejar y revoca el secreto anterior
  p.settings.relay=p.settings.boundRelay='https://relay.example';p.settings.boundRelaySecret='old-secret';p.settings.relaySecret='new-secret';
  p.app.secretStorage={getSecret:id=>id==='old-secret'?'old-test-token':null,setSecret:()=>{}};
  await a.rejects(p.relayRequest('/plugin/poll',{}),error=>error.code==='reconnect');a.equal(requests.length,0);
- await p.pairRelay();a.equal(requests[0].headers.Authorization,'Bearer old-test-token');a.equal(requests[0].url,'https://relay.example/plugin/revoke');a.equal(requests[1].headers.Authorization,undefined);a.equal(p.settings.boundRelaySecret,'new-secret');
+ p.deliveryTest={key:'connection-test-old-12345678',path:'ChatGPT Inbox/Prueba de conexión-connection-test-old-12345678.md',relay:p.settings.relay,secret:'old-secret',state:'unknown'};
+ await p.pairRelay();a.equal(p.deliveryTest,null,'a new device grant must start a fresh test sequence');a.equal(requests[0].headers.Authorization,'Bearer old-test-token');a.equal(requests[0].url,'https://relay.example/plugin/revoke');a.equal(requests[1].headers.Authorization,undefined);a.equal(p.settings.boundRelaySecret,'new-secret');
 });
 
 test('datos locales dañados no inyectan tipos, historial ni claves de prototipo',async()=>{

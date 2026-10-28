@@ -32,7 +32,7 @@ export function withDeadline<T>(request:Promise<T>,timeoutMs=20000,timers:Pick<W
 }
 
 export function historyPresentation(state:string,receiptPending=false):{label:string;help:string}{
-  if(state==='Guardada sin recibo')return {label:'Esperando confirmación',help:'La nota está guardada y verificada localmente; falta el recibo del relay. Pulsa recibir ahora para reintentarlo sin duplicarla.'};
+  if(state==='Guardada sin recibo')return {label:'Esperando confirmación',help:'La nota está guardada y verificada localmente; falta el recibo del relay. Con la misma conexión, pulsa recibir ahora para reintentarlo sin duplicarla.'};
   if(state==='Importada'||state==='Ya entregada')return {label:'Entregada',help:'La nota se verificó en esta bóveda.'};
   if(state==='Conflicto')return {label:'Conflicto',help:'Se conserva el archivo existente. Envía la nota con otro título.'+(receiptPending?' Falta comunicar el conflicto al relay.':'')};
   if(state==='Bloqueada')return {label:'Requiere revisión',help:'Comprueba las carpetas permitidas y el formato de la solicitud.'};
