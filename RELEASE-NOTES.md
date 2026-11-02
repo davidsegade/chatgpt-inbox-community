@@ -1,3 +1,9 @@
+# 0.4.5 — safer device re-pairing
+
+- Preserve the existing relay credential if a new pairing attempt fails. Do not revoke the working grant before a replacement is confirmed.
+- Add regression coverage for failed pairing and for changing the device secret identifier.
+- All 148 local verification tests pass; mobile reception remains subject to iOS background restrictions.
+
 # 0.4.4 — reception reliability candidate
 
 - Separate verified local notes awaiting a relay receipt from confirmed delivery, conflicts and blocked requests.
