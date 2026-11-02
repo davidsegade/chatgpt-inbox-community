@@ -116,13 +116,24 @@ test('cambiar el relay durante emparejamiento no vincula su token a otro origen'
  await a.rejects(p.pairRelay(),error=>error.code==='reconnect');a.equal(stored,false);a.equal(p.settings.boundRelay,'');
 });
 
-test('cambiar el nombre del secreto exige emparejar y revoca el secreto anterior',async()=>{
+test('cambiar el nombre del secreto exige emparejar sin revocar el secreto anterior',async()=>{
  const {p,requests}=harness({},async r=>({status:200,json:r.url.endsWith('/pair')?{plugin_token:'new-test-token',pair_code:'code'}:{revoked:true}}));
  p.settings.relay=p.settings.boundRelay='https://relay.example';p.settings.boundRelaySecret='old-secret';p.settings.relaySecret='new-secret';
  p.app.secretStorage={getSecret:id=>id==='old-secret'?'old-test-token':null,setSecret:()=>{}};
  await a.rejects(p.relayRequest('/plugin/poll',{}),error=>error.code==='reconnect');a.equal(requests.length,0);
  p.deliveryTest={key:'connection-test-old-12345678',path:'ChatGPT Inbox/Prueba de conexión-connection-test-old-12345678.md',relay:p.settings.relay,secret:'old-secret',state:'unknown'};
- await p.pairRelay();a.equal(p.deliveryTest,null,'a new device grant must start a fresh test sequence');a.equal(requests[0].headers.Authorization,'Bearer old-test-token');a.equal(requests[0].url,'https://relay.example/plugin/revoke');a.equal(requests[1].headers.Authorization,undefined);a.equal(p.settings.boundRelaySecret,'new-secret');
+ await p.pairRelay();a.equal(p.deliveryTest,null,'a new device grant must start a fresh test sequence');a.equal(requests.length,1);a.equal(requests[0].headers.Authorization,undefined);a.equal(requests[0].url,'https://relay.example/pair');a.equal(p.settings.boundRelaySecret,'new-secret');
+});
+
+test('un emparejamiento fallido conserva el token anterior y no revoca el dispositivo',async()=>{
+ const {p,requests}=harness({},async()=>({status:503,json:{}}));
+ p.settings.relay=p.settings.boundRelay='https://relay.example';
+ p.settings.relaySecret=p.settings.boundRelaySecret='existing-secret';
+ let writes=0;
+ p.app.secretStorage={getSecret:()=>'existing-token',setSecret:()=>{writes++;}};
+ await a.rejects(p.pairRelay());
+ a.equal(writes,0);a.equal(p.settings.boundRelaySecret,'existing-secret');
+ a.equal(requests.length,1);a.equal(requests[0].url,'https://relay.example/pair');
 });
 
 test('datos locales dañados no inyectan tipos, historial ni claves de prototipo',async()=>{
