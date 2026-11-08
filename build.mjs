@@ -13,3 +13,5 @@ await build({entryPoints:['identity.ts'],bundle:true,platform:'node',format:'cjs
 await build({entryPoints:['ui.ts'],bundle:true,platform:'browser',format:'cjs',external:['obsidian'],outfile:'ui.cjs'});
 
 await build({entryPoints:['reception.ts'],bundle:true,platform:'browser',format:'cjs',outfile:'reception.cjs'});
+
+await build({entryPoints:['extensions.ts'],bundle:true,platform:'browser',format:'cjs',external:['obsidian'],outfile:'extensions.cjs'});

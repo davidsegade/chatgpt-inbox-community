@@ -1,3 +1,21 @@
+# Unified 0.5.0 — physical acceptance
+
+The upgrade candidate preserves the public plugin identity. Its new GitHub behaviors require a physical iPhone check; passing mocks is not mobile proof.
+
+| Check | Required result | Evidence |
+|---|---|---|
+| Migration | Community 0.5.0 active; private receiver disabled; previous notes/settings/history retained | Pending |
+| Secret selection | Reopen without reselecting/authorizing the stored token | Pending |
+| Creation | Queued note appears exactly once on opening | Pending |
+| Editing | Known note is updated; a changed note is preserved as conflict | Pending |
+| Trash | Matching note moves to recoverable trash | Pending |
+| Restore | Inbox restore returns the copy without overwriting current content | Pending |
+| Attachments | Image renders and text file opens, with verified byte hashes | Pending |
+| Repeat/reopen | No repeated mutations, recreated deleted note or duplicated files | Pending |
+| Offline/resume | Incomplete attachment delivery resumes without corrupting originals | Pending |
+
+GitHub receipts remain local. Relay receipt behavior is unchanged and has its own acceptance record below.
+
 # Reliability acceptance — 0.4.4 candidate
 
 ## Automated evidence

@@ -1,7 +1,7 @@
 import {authorize,digest,Job,Ledger,LocalVault} from './core';
 export interface IdentityEntry {path?:string; noteId?:string; contentHash?:string; legacyHash?:string; originalPath?:string}
 const tag=/\n?<!-- chatgpt-inbox-note:([a-f0-9]{64}) -->\n?/g;
-export function stripIdentity(text:string){return text.replace(tag,'');}
+export function stripIdentity(text:string){const suffix=/\n(?:(?:<!-- chatgpt-inbox-note:[a-f0-9]{64} -->|<!-- chatgpt-inbox-op:[a-f0-9]{64}:[a-f0-9]{64} -->)\n?)+$/;return text.replace(suffix,'').replace(tag,'').replace(/\n?<!-- chatgpt-inbox-op:[a-f0-9]{64}:[a-f0-9]{64} -->\n?/g,'');}
 export function markers(text:string):string[]{return [...text.matchAll(/<!-- chatgpt-inbox-note:([a-f0-9]{64}) -->/g)].map(m=>m[1]);}
 export async function noteIdentity(id:string){return digest('chatgpt-inbox:v1:'+id);}
 export function stamp(text:string,id:string){return text+`\n<!-- chatgpt-inbox-note:${id} -->\n`;}

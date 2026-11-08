@@ -4,3 +4,6 @@ main.js
 !*.test.cjs
 !test.cjs
 !integration.cjs
+!operations.cjs
+!attachments.cjs
+!extensions.integration.cjs
