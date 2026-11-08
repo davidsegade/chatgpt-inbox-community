@@ -4,6 +4,18 @@ Create Markdown notes in your current Obsidian vault from ChatGPT or another com
 
 An independent MIT-licensed project by David Segade. It is not an official Obsidian or OpenAI product.
 
+## Choose your setup (iPhone and desktop)
+
+**Start here:** Install **ChatGPT Inbox Community** in Obsidian and choose the mode that matches your needs. Installing the plugin does **not** automatically create a hosted relay or a custom ChatGPT connector.
+
+- **Lite — simplest:** Create a note with an `obsidian://new` link and confirm it in Obsidian. No hosted server or database is required; delivery is user-initiated and there is no remote receipt.
+- **Relay — queued notes with delivery confirmation:** Requires an independently hosted, trusted HTTPS relay backed by its own PostgreSQL database, plus a compatible ChatGPT/MCP client. The public plugin includes relay source code, **not** a free public relay service. Follow [relay setup](relay/README.md); do not reuse a private test relay or its credentials.
+- **Advanced GitHub — optional:** Requires a repository, a read-only Contents token configured in Obsidian, and a separate writer that creates requests there.
+
+**On iPhone:** Leave Obsidian open and active when receiving notes, or use **Recibir ahora** in Relay mode. The Mac can be off. iOS does not deliver relay notes while Obsidian is suspended in the background. A `queued` receipt is **not** proof of a saved note; only `delivered` confirms that Obsidian verified the write.
+
+**Existing installations:** Upgrading the plugin does not migrate credentials from a different plugin ID. Avoid changing a working relay origin, device secret or OAuth registration unless you intend to reconnect.
+
 ## Unified 0.5.0 candidate — GitHub extensions
 
 This candidate consolidates the private receiver features into the public plugin ID `chatgpt-inbox-community`. It is not a production release until published and physically accepted on iPhone. Existing Relay and Lite modes remain create-only; their servers and credentials are unchanged.

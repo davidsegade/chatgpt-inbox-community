@@ -222,11 +222,7 @@ export default class Inbox extends Plugin {
     if(!this.app.secretStorage)throw Error('Se necesita Obsidian 1.14.5 o posterior.');
     this.destination();this.settings.roots.forEach(r=>safePath(r,false));
     const secret=secretId(this.settings.relaySecret),origin=relayOrigin(this.settings.relay);
-    const oldSecret=this.settings.boundRelaySecret||secret;
-    if(this.settings.boundRelay&&this.app.secretStorage.getSecret(oldSecret)){
-      const old=await this.request({url:relayOrigin(this.settings.boundRelay)+'/plugin/revoke',method:'POST',headers:{Authorization:`Bearer ${this.app.secretStorage.getSecret(oldSecret)}`},throw:false});
-      if(![200,401].includes(old.status))throw Error('No se pudo revocar el emparejamiento anterior.');
-    }
+    // Do not revoke the previous working credential before successful pairing.
     if(origin!==relayOrigin(this.settings.relay)||secret!==this.settings.relaySecret)throw Error('La conexión cambió durante el emparejamiento.');
     const b=await this.relayRequest('/pair',{folders:this.permittedRoots(),defaultFolder:this.settings.defaultFolder},true);
     if(typeof b.plugin_token!=='string'||typeof b.pair_code!=='string')throw Error('Respuesta de emparejamiento inválida');
