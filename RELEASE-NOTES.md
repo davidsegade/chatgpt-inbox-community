@@ -1,3 +1,13 @@
+# 0.5.0 — unified receiver candidate
+
+- Consolidate version-checked editing, recoverable trash/restore and verified binary attachments in Advanced GitHub mode. Relay/Lite stay create-only.
+- Keep expanded permissions opt-in, enforce scope/lifecycle guards around asynchronous work, persist idempotent local receipts and retain previous note versions.
+- Remember the GitHub secret selection per device, check automatically after selection and recover if secret storage becomes available after initial layout.
+- Use portable SHA-256 for binary integrity on mobile WebViews without crypto.subtle.
+- Preserve create-only delivery, Relay OAuth/receipt handling and the public plugin identity. A migration preserves private history/ledger and secret identifiers; the private receiver is disabled, not deleted.
+
+Automated validation and the iPhone acceptance results are tracked separately. This source change does not publish a release or deploy a relay.
+
 # 0.4.4 — reception reliability candidate
 
 - Separate verified local notes awaiting a relay receipt from confirmed delivery, conflicts and blocked requests.

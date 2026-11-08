@@ -1,3 +1,6 @@
+import * as mutations from './operations.cjs';
+import * as attachments from './attachments.cjs';
+import {loadMutationReceipts,loadAttachmentReceipts,mutationDriver,attachmentDriver,hashData,restoreCopy as restoreLocalCopy} from './extensions';
 import {ReceptionError,failureText,retryDelay,withDeadline,FailureCode} from './reception';
 import {Plugin,PluginSettingTab,SecretComponent,Notice,requestUrl,TFile,TFolder,SettingDefinitionItem,apiVersion} from 'obsidian';
 import {SetupModal,InboxModal,InstructionsModal,DiagnosticsModal,folderDefinitions} from './ui';
@@ -5,15 +8,15 @@ import {allowed,MAX_BYTES,bytes,safePath,parseEnvelope,deliver,Ledger,digest,ran
 import {noteIdentity,stamp,stripIdentity,locateIdentity,recoverDelivery,markers} from './identity';
 import {sourcePath,inboxPath} from './source';
 import {relayOrigin,receiveRelay} from './relay-client';
-interface Settings { enabled:boolean; wholeVault:boolean; defaultFolder:string; roots:string[]; secret:string; interval:number; repository:string; branch:string; transport: string; relay:string; relaySecret:string; boundRelay:string; boundRelaySecret:string }
-const defaults:Settings={enabled:false,wholeVault:false,defaultFolder:'ChatGPT Inbox',roots:['ChatGPT Inbox'],secret:'chatgpt-inbox-community-github-read',interval:120,repository:'',branch:'main',transport:'relay',relay:'',relaySecret:'chatgpt-inbox-community-relay',boundRelay:'',boundRelaySecret:''};
+interface Settings { allowChanges:boolean;allowAttachments:boolean;enabled:boolean; wholeVault:boolean; defaultFolder:string; roots:string[]; secret:string; interval:number; repository:string; branch:string; transport: string; relay:string; relaySecret:string; boundRelay:string; boundRelaySecret:string }
+const defaults:Settings={allowChanges:false,allowAttachments:false,enabled:false,wholeVault:false,defaultFolder:'ChatGPT Inbox',roots:['ChatGPT Inbox'],secret:'chatgpt-inbox-community-github-read',interval:120,repository:'',branch:'main',transport:'relay',relay:'',relaySecret:'chatgpt-inbox-community-relay',boundRelay:'',boundRelaySecret:''};
 export interface DeliveryTest {key:string;path:string;relay:string;secret:string;state:string;id?:string}
-export interface HistoryEntry {receiptPending?:boolean; source:string; path?:string; state:string; detail?:string; time:number; noteId?:string; contentHash?:string; legacyHash?:string; originalPath?:string }
+export interface HistoryEntry {operation?:string;backupPath?:string;restoredPath?:string;receiptPending?:boolean; source:string; path?:string; state:string; detail?:string; time:number; noteId?:string; contentHash?:string; legacyHash?:string; originalPath?:string }
 
 function isHistoryEntry(value:unknown):value is HistoryEntry {
   if(!isRecord(value)||typeof value.source!=='string'||typeof value.state!=='string'||typeof value.time!=='number'||!Number.isFinite(value.time))return false;
   if(value.receiptPending!==undefined&&typeof value.receiptPending!=='boolean')return false;
-  return ['path','detail','noteId','contentHash','legacyHash','originalPath'].every(key=>value[key]===undefined||typeof value[key]==='string');
+  return ['path','detail','noteId','contentHash','legacyHash','originalPath','operation','backupPath','restoredPath'].every(key=>value[key]===undefined||typeof value[key]==='string');
 }
 function relayJobs(value:unknown,configDir:string):Job[]{
   if(!Array.isArray(value)||value.length>10)throw Error('Respuesta del relay inválida');
@@ -37,6 +40,8 @@ function githubListing(value:unknown):GithubEntry[]{
 export default class Inbox extends Plugin {
   settings:Settings={...defaults,roots:[...defaults.roots]}; ledger:Ledger=Object.create(null) as Ledger; running=false; retryPermissions=false; stopped=false; last=0; retryAfter=0; status='Sin comprobar'; issues:string[]=[]; history:HistoryEntry[]=[]; private saveQueue:Promise<void>=Promise.resolve();
   lastSuccess=0; nextRetry=0; failures=0; failureCode:FailureCode|null=null; testing=false; deliveryTest:DeliveryTest|null=null;
+  operationLedger:Record<string,mutations.MutationReceipt>={};attachmentLedger:Record<string,attachments.AttachmentReceipt>={};
+  private githubSecretPending=false;
   private epoch=0; private resumePending=false; private retryContext=''; private pendingRequests=new Set<AbortController>();
   async onload(){
     const raw:unknown=await this.loadData();
@@ -46,7 +51,7 @@ export default class Inbox extends Plugin {
     for(const key of ['defaultFolder','secret','repository','branch','transport','relay','relaySecret','boundRelay','boundRelaySecret'] as const){
       if(typeof settings[key]==='string')this.settings[key]=settings[key];
     }
-    for(const key of ['enabled','wholeVault'] as const)if(typeof settings[key]==='boolean')this.settings[key]=settings[key];
+    for(const key of ['enabled','wholeVault','allowChanges','allowAttachments'] as const)if(typeof settings[key]==='boolean')this.settings[key]=settings[key];
     if(typeof settings.interval==='number'&&Number.isFinite(settings.interval)&&settings.interval>=60&&settings.interval<=86400)this.settings.interval=settings.interval;
     if(Array.isArray(settings.roots))this.settings.roots=settings.roots.filter((root:unknown):root is string=>{
       try{safePath(root,false);return true;}catch{return false;}
@@ -54,6 +59,8 @@ export default class Inbox extends Plugin {
     if(!settings.relaySecret)this.settings.relaySecret='chatgpt-inbox-community-'+randomToken();
     this.ledger=Object.create(null) as Ledger;
     if(isRecord(data.ledger))for(const [key,value] of Object.entries(data.ledger))if(typeof value==='string')this.ledger[key]=value;
+    this.operationLedger=loadMutationReceipts(data.operationLedger);this.attachmentLedger=loadAttachmentReceipts(data.attachmentLedger);
+    try{const local=window.localStorage?.getItem('chatgpt-inbox-community:github-secret:'+this.app.vault.getName())??window.localStorage?.getItem('chatgpt-inbox:secret-reference:'+this.app.vault.getName());if(local!==null&&local!==undefined)this.settings.secret=local;}catch{/* Device storage is optional; never copy the credential itself. */}
     this.history=Array.isArray(data.history)?data.history.filter(isHistoryEntry).slice(-100):[];
     const test=data.deliveryTest;
     if(isRecord(test)&&['key','path','relay','secret','state'].every(key=>typeof test[key]==='string')&&typeof test.key==='string'&&typeof test.path==='string'&&typeof test.relay==='string'&&typeof test.secret==='string'&&typeof test.state==='string'){
@@ -70,7 +77,7 @@ export default class Inbox extends Plugin {
     this.addSettingTab(new InboxSettings(this.app,this));
     this.addCommand({id:'import',name:'Recibir ahora',callback:()=>void this.poll(true)});
     this.app.workspace.onLayoutReady(()=>void this.poll());
-    this.registerInterval(window.setInterval(()=>{if(Date.now()>=Math.max(this.nextRetry,this.retryAfter)&&(this.failureCode||Date.now()-this.last>=Math.max(60,this.settings.interval)*1000)) void this.poll();},15000));
+    this.registerInterval(window.setInterval(()=>{this.refreshGithubSecret();if(Date.now()>=Math.max(this.nextRetry,this.retryAfter)&&(this.failureCode||Date.now()-this.last>=Math.max(60,this.settings.interval)*1000)) void this.poll();},15000));
     this.registerDomEvent(document,'visibilitychange',()=>{if(document.hidden)this.suspendReception();else this.resumeReception();});
     this.registerDomEvent(window,'focus',()=>this.resumeReception());
     this.registerDomEvent(window,'online',()=>this.resumeReception());
@@ -78,7 +85,8 @@ export default class Inbox extends Plugin {
   }
   onunload(){this.stopped=true;this.epoch++;this.cancelRequests('background');}
   suspendReception(){this.epoch++;this.cancelRequests('background');if(this.running){this.resumePending=true;this.last=0;}this.notifyUpdate();}
-  resumeReception(){if(this.stopped||document.hidden)return;if(this.running){this.resumePending=true;return;}void this.poll();}
+  private refreshGithubSecret(){if(!this.githubSecretPending||this.settings.transport!=='github'||document.hidden||this.stopped)return;try{if(this.app.secretStorage?.getSecret(this.settings.secret)){this.githubSecretPending=false;this.failureCode=null;this.last=0;this.nextRetry=0;}}catch{/* A locked device secret is retried on the next foreground check. */}}
+  resumeReception(){if(this.stopped||document.hidden)return;this.refreshGithubSecret();if(this.running){this.resumePending=true;return;}void this.poll();}
   private connectionKey(){return JSON.stringify([this.settings.transport,this.settings.relay,this.settings.relaySecret,this.settings.repository,this.settings.branch,this.settings.secret]);}
   private active(epoch=this.epoch,context?:string){if(this.stopped||document.hidden||epoch!==this.epoch||(context!==undefined&&context!==this.connectionKey()))throw new ReceptionError('background');}
   private applyFailure(error:unknown){
@@ -164,17 +172,20 @@ export default class Inbox extends Plugin {
   onUpdate(listener:()=>void){this.updateListeners.add(listener);return ()=>{this.updateListeners.delete(listener);};}
   private notifyUpdate(){for(const listener of this.updateListeners){try{listener();}catch{/* A view failure must not change delivery state. */}}}
   async persist(){
-    const snapshot={settings:{...this.settings,roots:[...this.settings.roots]},ledger:{...this.ledger},history:this.history.map(entry=>({...entry})),deliveryTest:this.deliveryTest?{...this.deliveryTest}:null};
+    const snapshot={settings:{...this.settings,roots:[...this.settings.roots]},ledger:{...this.ledger},operationLedger:{...this.operationLedger},attachmentLedger:{...this.attachmentLedger},history:this.history.map(entry=>({...entry})),deliveryTest:this.deliveryTest?{...this.deliveryTest}:null};
     const save=this.saveQueue.catch(()=>{}).then(()=>this.saveData(snapshot)).catch(()=>{throw new ReceptionError('storage');});this.saveQueue=save;await save;
   }
   record(entry:Omit<HistoryEntry,'time'>){
     const old=this.history.find(h=>h.source===entry.source);
+    if(old&&['Actualizada','En papelera','Adjuntos recibidos'].includes(old.state)&&(entry.state===old.state||entry.state==='Bloqueada'))return;
     if(old&&entry.state==='Bloqueada'&&(old.state==='Importada'||old.state==='Ya entregada'))return;
     if(old&&entry.state==='Ya entregada'&&(old.state==='Importada'||old.state==='Ya entregada')){old.noteId??=entry.noteId;old.contentHash??=entry.contentHash;old.legacyHash??=entry.legacyHash;old.originalPath??=entry.originalPath;return;}
     this.history=this.history.filter(h=>h.source!==entry.source);
     this.history.push({...entry,time:Date.now()});this.history=this.history.slice(-100);this.notifyUpdate();
   }
   async resolveNote(entry:HistoryEntry){
+    if((entry.operation==='update'||entry.operation==='attachments')&&entry.path){if(!allowed(entry.path,this.permittedRoots(),this.app.vault.configDir,entry.operation!=='attachments'))throw Error('Carpeta no autorizada');const f=this.app.vault.getAbstractFileByPath(entry.path);if(f instanceof TFile)return f;}
+
     const candidates=new Set<TFile>();
     const visit=(folder:TFolder)=>{for(const file of folder.children){
       try{
@@ -187,6 +198,8 @@ export default class Inbox extends Plugin {
     const file=await locateIdentity(entry,[...candidates],f=>{authorize(f.path,this.permittedRoots(),this.app.vault.configDir);return this.app.vault.cachedRead(f);});
     entry.path=file.path;await this.persist();return file;
   }
+  async selectGithubSecret(value:string|null|undefined){this.settings.secret=value??'';try{window.localStorage?.setItem('chatgpt-inbox-community:github-secret:'+this.app.vault.getName(),this.settings.secret);}catch{/* Keep the selection in normal settings if local storage is unavailable. */}await this.permissionsChanged();}
+  async restoreCopy(entry:HistoryEntry){return restoreLocalCopy(this.app,entry,path=>{this.active();if(!this.settings.allowChanges)throw Error('Cambios desactivados');authorize(path,this.permittedRoots(),this.app.vault.configDir);},stripIdentity,()=>this.persist());}
   repoPath(){return sourcePath(this.settings.repository,this.settings.branch);}
   async relayRequest(path:string,body:unknown,anonymous=false):Promise<Record<string,unknown>>{
     const origin=relayOrigin(this.settings.relay);
@@ -285,9 +298,9 @@ export default class Inbox extends Plugin {
       this.repoPath();
       if(!this.app.secretStorage) throw Error('Se necesita Obsidian 1.14.5 o posterior');
       const token=this.app.secretStorage.getSecret(this.settings.secret);
-      if(!token)throw Error('Selecciona un secreto con token GitHub de solo lectura');
+      if(!token){this.githubSecretPending=true;throw Error('Selecciona un secreto con token GitHub de solo lectura');}this.githubSecretPending=false;
       this.settings.roots.forEach(r=>safePath(r,false));
-      const guard=(path:string)=>{this.active(epoch,context);if(!this.settings.enabled)throw new ReceptionError('background');authorize(path,this.permittedRoots(),this.app.vault.configDir);};
+      const guard=(path:string,markdown=true)=>{this.active(epoch,context);if(!this.settings.enabled)throw new ReceptionError('background');if(!allowed(path,this.permittedRoots(),this.app.vault.configDir,markdown))throw Error('Carpeta no autorizada');};
       const listing=githubListing((await this.get(inboxPath(this.settings.branch),token)).json);this.active(epoch,context);
       if(!Array.isArray(listing)||listing.length>=1000)throw Error('Cola inválida o llena; archiva solicitudes antiguas en GitHub');
       for(const entry of listing){
@@ -304,7 +317,27 @@ export default class Inbox extends Plugin {
           // Validate the envelope and config-path protection before any local read.
           // The folder scope is enforced inside the recovery step, so a path the
           // user never authorized is never opened in the vault.
+          const envelope:unknown=JSON.parse(raw);
+          if(isRecord(envelope)&&envelope.version===2){
+            if(!this.settings.allowChanges)throw Error('Edición y papelera no autorizadas');
+            const job=mutations.parse(raw,this.permittedRoots(),this.app.vault.configDir,safePath,allowed);
+            if(Object.prototype.hasOwnProperty.call(this.ledger,job.id)||Object.prototype.hasOwnProperty.call(this.attachmentLedger,job.id))throw Error('ID ya utilizado');
+            const protect=(path:string)=>{guard(path);if(!this.settings.allowChanges)throw Error('Cambios desactivados');};
+            const result=await mutations.execute(job,this.operationLedger,mutationDriver(this.app,job.path,protect),()=>this.persist(),digest);
+            if(result.state==='applied'){if(result.replayed)delivered++;else imported++;}else problems++;
+            this.record({source:entry.name,path:job.path,originalPath:job.path,operation:job.operation,state:result.state==='applied'?(job.operation==='update'?'Actualizada':'En papelera'):'Conflicto',detail:result.detail,backupPath:result.backupPath});await this.persist();continue;
+          }
+          if(isRecord(envelope)&&envelope.version===3){
+            if(!this.settings.allowAttachments)throw Error('Adjuntos no autorizados');
+            const job=attachments.parse(raw,this.permittedRoots(),this.app.vault.configDir,safePath,allowed);
+            if(Object.prototype.hasOwnProperty.call(this.ledger,job.id)||Object.prototype.hasOwnProperty.call(this.operationLedger,job.id))throw Error('ID ya utilizado');
+            const protect=(path:string,markdown=true)=>{guard(path,markdown);if(!this.settings.allowAttachments)throw Error('Adjuntos desactivados');};
+            const result=await attachments.execute(job,this.attachmentLedger,attachmentDriver(this.app,protect,async sha=>{this.active(epoch,context);const b:unknown=(await this.get('git/blobs/'+sha,token)).json;this.active(epoch,context);return b;}),()=>this.persist(),stripIdentity,stamp,noteIdentity,hashData);
+            if(result.state==='applied'){if(result.replayed)delivered++;else imported++;}else problems++;
+            this.record({source:entry.name,path:job.note?.path??job.files[0].path,originalPath:job.note?.path??job.files[0].path,operation:'attachments',state:result.state==='applied'?'Adjuntos recibidos':'Conflicto',detail:result.detail});await this.persist();continue;
+          }
           const job=parseEnvelope(raw,this.app.vault.configDir);
+          if(Object.prototype.hasOwnProperty.call(this.operationLedger,job.id)||Object.prototype.hasOwnProperty.call(this.attachmentLedger,job.id))throw Error('ID ya utilizado');
           const recovered=await recoverDelivery(job,this.ledger,async p=>{guard(p);const f=this.app.vault.getAbstractFileByPath(p);return f instanceof TFile?this.app.vault.read(f):null;},this.permittedRoots(),this.app.vault.configDir);
           const identity=await noteIdentity(job.id);
           const result=recovered?'duplicada':await deliver(job,this.ledger,{
@@ -337,9 +370,11 @@ class InboxSettings extends PluginSettingTab {
       {name:'Empezar aquí',desc:'Tres pasos: conexión, carpetas y recepción.',render:row=>{row.addButton(b=>b.setButtonText('Configurar paso a paso').setCta().onClick(()=>new SetupModal(p).open()));}},
       {name:'Tus notas recibidas',render:row=>{row.addButton(b=>b.setButtonText('Abrir bandeja').onClick(()=>new InboxModal(p).open())).addButton(b=>b.setButtonText('Instrucción para ChatGPT').onClick(()=>new InstructionsModal(p).open()));}},
       {name:'Importar solicitudes',desc:'Solo crea notas nuevas en el ámbito autorizado. Obsidian debe estar abierto.',render:row=>{row.addToggle(t=>t.setValue(p.settings.enabled).onChange(async value=>{p.settings.enabled=value;await p.persist();}));}},
+      {name:'Permitir edición y papelera',desc:'Solo por GitHub y con huella de la versión anterior. Guarda copias recuperables.',visible:()=>p.settings.transport==='github',render:row=>{row.addToggle(t=>t.setValue(p.settings.allowChanges).onChange(async value=>{p.settings.allowChanges=value;await p.permissionsChanged();}));}},
+      {name:'Permitir fotos y archivos',desc:'Solo por GitHub. Hasta 20 MiB y 32 archivos por solicitud; no sobrescribe destinos distintos.',visible:()=>p.settings.transport==='github',render:row=>{row.addToggle(t=>t.setValue(p.settings.allowAttachments).onChange(async value=>{p.settings.allowAttachments=value;await p.permissionsChanged();}));}},
       {name:'Repositorio GitHub',visible:()=>p.settings.transport==='github',render:row=>{row.addText(t=>t.setPlaceholder('usuario/mi-inbox').setValue(p.settings.repository).onChange(async value=>{p.settings.repository=value.trim();await p.persist();}));}},
       {name:'Rama',visible:()=>p.settings.transport==='github',render:row=>{row.addText(t=>t.setValue(p.settings.branch).onChange(async value=>{p.settings.branch=value.trim();await p.persist();}));}},
-      {name:'Token de solo lectura',desc:'Solo este repositorio, Contents: Read-only. Se configura por dispositivo.',visible:()=>p.settings.transport==='github',render:row=>{row.addComponent(c=>new SecretComponent(this.app,c).setValue(p.settings.secret).onChange(async value=>{p.settings.secret=value??'';await p.persist();}));}},
+      {name:'Token de solo lectura',desc:'Solo este repositorio, Contents: Read-only. Se configura por dispositivo.',visible:()=>p.settings.transport==='github',render:row=>{row.addComponent(c=>new SecretComponent(this.app,c).setValue(p.settings.secret).onChange(async value=>{await p.selectGithubSecret(value);}));}},
       {type:'group',heading:'Carpetas permitidas',items:folderDefinitions(p,()=>this.update())},
       {name:'Intervalo (segundos)',desc:'Mínimo 60. Solo con Obsidian abierto y activo.',render:row=>{row.addText(t=>t.setValue(String(p.settings.interval)).onChange(async value=>{const n=Number(value);if(Number.isFinite(n)&&n>=60&&n<=86400){p.settings.interval=n;await p.persist();}}));}},
       ...p.issues.map(issue=>({name:issue})),

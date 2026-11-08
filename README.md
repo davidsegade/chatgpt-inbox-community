@@ -1,8 +1,23 @@
 # ChatGPT Inbox Community
 
-Create new Markdown notes in your current Obsidian vault from ChatGPT or another compatible MCP client. Choose which folders may receive notes, and check delivery receipts instead of assuming a queued note has arrived.
+Create Markdown notes in your current Obsidian vault from ChatGPT or another compatible MCP client. In Advanced GitHub mode, optional permissions also enable version-checked edits, recoverable trash and original file/photo attachments. Choose which folders may receive notes, and check delivery receipts instead of assuming a queued note has arrived.
 
 An independent MIT-licensed project by David Segade. It is not an official Obsidian or OpenAI product.
+
+## Unified 0.5.0 candidate — GitHub extensions
+
+This candidate consolidates the private receiver features into the public plugin ID `chatgpt-inbox-community`. It is not a production release until published and physically accepted on iPhone. Existing Relay and Lite modes remain create-only; their servers and credentials are unchanged.
+
+In **Advanced GitHub**, two separate switches authorize **Permitir edición y papelera** and **Permitir fotos y archivos**. Both default off for existing users. Folder scope is still checked before reads and writes, including after asynchronous downloads. The selected GitHub secret identifier is remembered locally per device; the credential stays in SecretStorage. If SecretStorage becomes available after the initial layout, foreground checks recover automatically without opening settings.
+
+- **Edit:** version 2 requests require the SHA-256 of the exact previous text. Changed notes produce a conflict. An atomic comparison protects the final write; the previous version is kept under `.trash/chatgpt-inbox/update/`.
+- **Trash:** version 2 requests move a matching note to `.trash/chatgpt-inbox/trash/`. No permanent deletion is performed. **Restaurar copia** in the inbox restores without overwriting an existing note.
+- **Attachments:** version 3 requests download original binary blobs from the configured GitHub repository, verify their complete SHA-256 and size, and create files without overwriting different content. A request can carry up to 32 files and 20 MiB total, with an optional linked Markdown note. Formats are preserved; not every format can be previewed by Obsidian. Files are never executed or extracted.
+- **Receipts:** GitHub results are local (`operationLedger` and `attachmentLedger`) and visible in the inbox. A commit is an accepted request, not proof of mobile delivery. The receiver still uses Contents: Read-only; no vault content or receipt is uploaded to GitHub automatically.
+
+See [extended request schemas](EXTENDED-REQUESTS.md). Files and note content intentionally sent through GitHub remain in that repository's history; use a private repository and include only authorized content.
+
+Do not run two receivers on the same queue. For migration from the private `chatgpt-inbox` ID, retain a local backup, preserve the existing ledger/history and selected secret identifier, set the configured repository/branch, and enable the new permissions only if requested. Disable the old receiver, then enable Community and verify version, one note, an edit/conflict, trash/restore and image/file integrity on the actual iPhone. Copying settings does not transfer the device credential. Do not remove the backup until mobile acceptance is complete.
 
 ## Requirements and connection options
 
