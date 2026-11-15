@@ -34,7 +34,7 @@ const note={carpeta:'Inbox',titulo:'Árbol',contenido:'# Hola 👋',clave:'reque
 
 test('HTTP OAuth + MCP SDK + plugin compilado → nota verificada → recibo; reintento de ACK',async t=>{
  const f=await fixture(t),p=await f.pair(),session=await f.authorize(p);assert.equal(session.response.status,200);const c=await f.client(session.access_token);
- const tools=await c.listTools();assert.deepEqual(tools.tools.map(t=>t.name).sort(),['consultar_estado','crear_nota','listar_carpetas']);
+ const tools=await c.listTools();assert.deepEqual(tools.tools.map(t=>t.name).sort(),['consultar_estado','consultar_lectura','crear_nota','leer_nota','listar_carpetas']);
  assert.deepEqual(unpack(await c.callTool({name:'listar_carpetas',arguments:{}})).carpetas,['Inbox']);
  const queued=unpack(await c.callTool({name:'crear_nota',arguments:note}));assert.equal(queued.state,'queued');
  assert.equal(unpack(await c.callTool({name:'crear_nota',arguments:note})).id,queued.id);
@@ -575,4 +575,85 @@ test('relay anterior informa de prueba no disponible y mantiene la recepción no
  await assert.rejects(h.plugin.testDelivery(),error=>error.code==='relay-update');assert.equal(h.files.size,0);
  const client=await f.client(session.access_token);await client.callTool({name:'crear_nota',arguments:note});await h.plugin.poll(true);
  assert.equal(h.files.size,1);assert.equal(h.plugin.history[0].state,'Importada');
+});
+
+test('lectura autorizada: desactivada por defecto, encola solo rutas permitidas y devuelve contenido por relay',async t=>{
+ const f=await fixture(t),p=await f.pair(),session=await f.authorize(p);assert.equal(session.response.status,200);const c=await f.client(session.access_token);
+ // Default: reading is not enabled on the device.
+ assert.equal((await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}})).isError,true);
+ // Enable reading explicitly through the device poll.
+ const enabled=await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);assert.equal(enabled.status,200);
+ const queued=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}}));assert.equal(queued.state,'queued');
+ assert.equal(queued.id.length>0,true);
+ // Unauthorized path is rejected before enqueueing.
+ assert.equal((await c.callTool({name:'leer_nota',arguments:{ruta:'Other/Secret.md'}})).isError,true);
+ // Device poll exposes the pending read.
+ const poll=await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);assert.equal(poll.status,200);const pollBody=await poll.json();assert.equal(pollBody.reads.length,1);assert.equal(pollBody.reads[0].id,queued.id);
+ // Device returns the content through the authenticated relay.
+ const result=await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# secreto'},p.plugin_token);assert.equal(result.status,200);
+ const status=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));assert.equal(status.state,'delivered');assert.equal(status.contenido,'# secreto');
+ // A blocked result does not expose content.
+ const blockedReq=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Otra.md'}}));assert.equal(blockedReq.state,'queued');
+ await f.post('/plugin/read-result',{id:blockedReq.id,state:'blocked',error:'No autorizada'},p.plugin_token);
+ const blockedStatus=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:blockedReq.id}}));assert.equal(blockedStatus.state,'blocked');assert.equal(blockedStatus.contenido,undefined);
+});
+
+test('read-result valida contenido antes de mutar, permite idempotencia idéntica y rechaza sobrescritura',async t=>{
+ const f=await fixture(t),p=await f.pair(),session=await f.authorize(p);assert.equal(session.response.status,200);const c=await f.client(session.access_token);
+ await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);
+ const queued=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}}));assert.equal(queued.state,'queued');
+ // Invalid content is rejected before state mutation.
+ const invalid=await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:42},p.plugin_token);assert.equal(invalid.status,400);
+ const stillQueued=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));assert.equal(stillQueued.state,'queued');assert.equal(stillQueued.contenido,undefined);
+ // Valid delivery.
+ const delivered=await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# secreto'},p.plugin_token);assert.equal(delivered.status,200);
+ // Identical retry is idempotent.
+ const retry=await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# secreto'},p.plugin_token);assert.equal(retry.status,200);
+ const afterRetry=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));assert.equal(afterRetry.state,'delivered');assert.equal(afterRetry.contenido,'# secreto');
+ // A different delivered payload cannot overwrite the confirmed response.
+ const overwrite=await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# otro'},p.plugin_token);assert.equal(overwrite.status,409);
+ // A terminal state cannot be changed to blocked.
+ const toBlocked=await f.post('/plugin/read-result',{id:queued.id,state:'blocked',error:'no'},p.plugin_token);assert.equal(toBlocked.status,409);
+ const finalStatus=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));assert.equal(finalStatus.state,'delivered');assert.equal(finalStatus.contenido,'# secreto');
+});
+
+test('read-result rechaza resultados caducados y consultar_lectura no expone contenido tras expiry',async t=>{
+ let time=Date.now();const f=await fixture(t,{now:()=>time}),p=await f.pair(),session=await f.authorize(p);assert.equal(session.response.status,200);const c=await f.client(session.access_token);
+ await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);
+ const queued=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}}));
+ await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# secreto'},p.plugin_token);
+ time+=300001;
+ assert.equal((await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# secreto'},p.plugin_token)).status,409);
+ const status=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));assert.notEqual(status.contenido,'# secreto');
+});
+
+test('read-result persiste el resultado confirmado en almacenamiento durable',async t=>{
+ const store={state:null,async load(){return this.state?structuredClone(this.state):null},async save(s){this.state=structuredClone(s)}};
+ const f=await fixture(t,{storage:store}),p=await f.pair(),session=await f.authorize(p);assert.equal(session.response.status,200);const c=await f.client(session.access_token);
+ await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);
+ const queued=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}}));
+ const result=await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# durable'},p.plugin_token);assert.equal(result.status,200);
+ await f.server.shutdown();
+ const restarted=await fixture(t,{storage:store,reuseOrigin:f.origin});
+ const c2=await restarted.client(session.access_token);
+ const status=unpack(await c2.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));
+ assert.equal(status.state,'delivered');assert.equal(status.contenido,'# durable');
+});
+
+test('lectura requiere permiso explícito vigente y ruta autorizada',async t=>{
+ const f=await fixture(t),p=await f.pair(),session=await f.authorize(p);assert.equal(session.response.status,200);const c=await f.client(session.access_token);
+ // Reading disabled by default.
+ assert.equal((await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}})).isError,true);
+ // Enabling then disabling removes permission for pending reads.
+ await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);
+ const queued=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}}));
+ const disabledPoll=await f.post('/plugin/poll',{folders:['Inbox'],allowRead:false},p.plugin_token);assert.equal(disabledPoll.status,200);
+ assert.equal((await f.post('/plugin/read-result',{id:queued.id,state:'delivered',content:'# secreto'},p.plugin_token)).status,403);
+ const blockedStatus=unpack(await c.callTool({name:'consultar_lectura',arguments:{id:queued.id}}));assert.notEqual(blockedStatus.contenido,'# secreto');
+ // Unauthorized path is never enqueued.
+ assert.equal((await c.callTool({name:'leer_nota',arguments:{ruta:'Other/Secret.md'}})).isError,true);
+ // Authorized path after re-enabling works.
+ await f.post('/plugin/poll',{folders:['Inbox'],allowRead:true},p.plugin_token);
+ const queued2=unpack(await c.callTool({name:'leer_nota',arguments:{ruta:'Inbox/Secret.md'}}));
+ assert.equal(queued2.state,'queued');
 });

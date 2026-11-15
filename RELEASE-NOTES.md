@@ -1,3 +1,12 @@
+# 0.6.0 — lectura autorizada en relay
+
+- Incorpora leer_nota y consultar_lectura por el relay autenticado, con respuesta caducable y restricción a carpetas autorizadas.
+- Añade permiso independiente Permitir lectura de notas, desactivado por defecto y solo visible en modo relay.
+- Protege lecturas revocadas, caducadas, fuera de ámbito y duplicadas; preserva creación, edición y adjuntos anteriores.
+- El contenido de notas NO se envía a GitHub mediante esta función. El relay recibe temporalmente el texto autorizado.
+- Para usar lectura hace falta desplegar por separado el relay actualizado, emparejarlo y activar permiso en Obsidian; instalar solo este plugin no cambia el relay ni habilita lectura.
+- La aceptación funcional con un iPhone real se realiza después de la instalación, antes de habilitar el uso habitual.
+
 # 0.5.0 — unified receiver candidate
 
 - Consolidate version-checked editing, recoverable trash/restore and verified binary attachments in Advanced GitHub mode. Relay/Lite stay create-only.
