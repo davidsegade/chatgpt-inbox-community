@@ -8,8 +8,8 @@ import {allowed,MAX_BYTES,bytes,safePath,parseEnvelope,deliver,Ledger,digest,ran
 import {noteIdentity,stamp,stripIdentity,locateIdentity,recoverDelivery,markers} from './identity';
 import {sourcePath,inboxPath} from './source';
 import {relayOrigin,receiveRelay} from './relay-client';
-interface Settings { allowChanges:boolean;allowAttachments:boolean;enabled:boolean; wholeVault:boolean; defaultFolder:string; roots:string[]; secret:string; interval:number; repository:string; branch:string; transport: string; relay:string; relaySecret:string; boundRelay:string; boundRelaySecret:string }
-const defaults:Settings={allowChanges:false,allowAttachments:false,enabled:false,wholeVault:false,defaultFolder:'ChatGPT Inbox',roots:['ChatGPT Inbox'],secret:'chatgpt-inbox-community-github-read',interval:120,repository:'',branch:'main',transport:'relay',relay:'',relaySecret:'chatgpt-inbox-community-relay',boundRelay:'',boundRelaySecret:''};
+interface Settings { allowChanges:boolean;allowAttachments:boolean;allowRead:boolean;enabled:boolean; wholeVault:boolean; defaultFolder:string; roots:string[]; secret:string; interval:number; repository:string; branch:string; transport: string; relay:string; relaySecret:string; boundRelay:string; boundRelaySecret:string }
+const defaults:Settings={allowChanges:false,allowAttachments:false,allowRead:false,enabled:false,wholeVault:false,defaultFolder:'ChatGPT Inbox',roots:['ChatGPT Inbox'],secret:'chatgpt-inbox-community-github-read',interval:120,repository:'',branch:'main',transport:'relay',relay:'',relaySecret:'chatgpt-inbox-community-relay',boundRelay:'',boundRelaySecret:''};
 export interface DeliveryTest {key:string;path:string;relay:string;secret:string;state:string;id?:string}
 export interface HistoryEntry {operation?:string;backupPath?:string;restoredPath?:string;receiptPending?:boolean; source:string; path?:string; state:string; detail?:string; time:number; noteId?:string; contentHash?:string; legacyHash?:string; originalPath?:string }
 
@@ -21,6 +21,15 @@ function isHistoryEntry(value:unknown):value is HistoryEntry {
 function relayJobs(value:unknown,configDir:string):Job[]{
   if(!Array.isArray(value)||value.length>10)throw Error('Respuesta del relay inválida');
   return value.map((job:unknown)=>parseEnvelope(JSON.stringify(job),configDir));
+}
+interface RelayRead {id:string;path:string}
+function relayReads(value:unknown,configDir:string):RelayRead[]{
+  if(value===undefined||value===null)return [];
+  if(!Array.isArray(value)||value.length>10)throw Error('Respuesta del relay inválida');
+  return value.map((raw:unknown)=>{
+    if(!isRecord(raw)||typeof raw.id!=='string'||typeof raw.path!=='string')throw Error('Solicitud de lectura inválida');
+    return {id:raw.id,path:safePath(raw.path)};
+  });
 }
 function requiredJob(jobs:Job[],match:(job:Job)=>boolean):Job{
   const job=jobs.find(match);if(!job)throw Error('Solicitud del relay ausente');return job;
@@ -51,7 +60,7 @@ export default class Inbox extends Plugin {
     for(const key of ['defaultFolder','secret','repository','branch','transport','relay','relaySecret','boundRelay','boundRelaySecret'] as const){
       if(typeof settings[key]==='string')this.settings[key]=settings[key];
     }
-    for(const key of ['enabled','wholeVault','allowChanges','allowAttachments'] as const)if(typeof settings[key]==='boolean')this.settings[key]=settings[key];
+    for(const key of ['enabled','wholeVault','allowChanges','allowAttachments','allowRead'] as const)if(typeof settings[key]==='boolean')this.settings[key]=settings[key];
     if(typeof settings.interval==='number'&&Number.isFinite(settings.interval)&&settings.interval>=60&&settings.interval<=86400)this.settings.interval=settings.interval;
     if(Array.isArray(settings.roots))this.settings.roots=settings.roots.filter((root:unknown):root is string=>{
       try{safePath(root,false);return true;}catch{return false;}
@@ -233,8 +242,9 @@ export default class Inbox extends Plugin {
   async revokeRelay(){await this.relayRequest('/plugin/revoke',{});this.app.secretStorage.setSecret(secretId(this.settings.relaySecret),'');this.settings.enabled=false;await this.persist();}
   async pollRelay(){
     const epoch=this.epoch,context=this.connectionKey();
-    const data=await this.relayRequest('/plugin/poll',{folders:this.permittedRoots(),defaultFolder:this.settings.defaultFolder});
+    const data=await this.relayRequest('/plugin/poll',{folders:this.permittedRoots(),defaultFolder:this.settings.defaultFolder,allowRead:this.settings.allowRead});
     const jobs=relayJobs(data.jobs,this.app.vault.configDir);
+    const reads=relayReads(data.reads,this.app.vault.configDir);
     if(this.stopped||!this.settings.enabled)return;
     const guard=(path:string)=>{this.active(epoch,context);if(!this.settings.enabled)throw new ReceptionError('background');authorize(path,this.permittedRoots(),this.app.vault.configDir);};
     await receiveRelay(jobs,this.permittedRoots(),this.app.vault.configDir,this.ledger,{
@@ -255,13 +265,27 @@ export default class Inbox extends Plugin {
       if(receipt.id!==id||receipt.state!==state)throw new ReceptionError('server');
       this.record({...entry,state:state==='delivered'?'Importada':'Conflicto',receiptPending:false});await this.persist();
     },job=>recoverDelivery(job,this.ledger,async path=>{guard(path);const f=this.app.vault.getAbstractFileByPath(path);return f instanceof TFile?this.app.vault.read(f):null;},this.permittedRoots(),this.app.vault.configDir));
+    for(const read of reads){
+      try{
+        guard(read.path);
+        if(!this.settings.allowRead)throw Error('Lectura no autorizada');
+        const file=this.app.vault.getAbstractFileByPath(read.path);
+        if(!(file instanceof TFile))throw Error('Nota no encontrada');
+        const text=stripIdentity(await this.app.vault.read(file));
+        if(bytes(text)>MAX_BYTES)throw Error('Nota demasiado grande');
+        this.active(epoch,context);const result=await this.relayRequest('/plugin/read-result',{id:read.id,state:'delivered',content:text});
+        if(result.id!==read.id||result.state!=='delivered')throw new ReceptionError('server');
+      }catch{
+        try{this.active(epoch,context);await this.relayRequest('/plugin/read-result',{id:read.id,state:'blocked',error:'No autorizada o no disponible'});}catch{/* El relay conserva la solicitud hasta caducar. */}
+      }
+    }
     const count=(name:string)=>{const value=isRecord(data.counts)?data.counts[name]:0;return typeof value==='number'&&Number.isSafeInteger(value)&&value>=0?value:0;};
     const remaining=Math.max(0,count('queued')-jobs.length),blocked=count('blocked');
     this.status=`${jobs.length} solicitud(es) procesada(s). ${remaining} todavía en cola. ${blocked} esperando permiso de carpeta. ${new Date().toLocaleString()}`;
   }
   async checkConnection(){
     this.destination();
-    if(this.settings.transport==='relay'){const data=await this.relayRequest('/plugin/poll',{folders:this.permittedRoots(),defaultFolder:this.settings.defaultFolder});if(data.writerConnected===false)throw new ReceptionError('pairing-pending');return relayJobs(data.jobs,this.app.vault.configDir).length;}
+    if(this.settings.transport==='relay'){const data=await this.relayRequest('/plugin/poll',{folders:this.permittedRoots(),defaultFolder:this.settings.defaultFolder,allowRead:this.settings.allowRead});if(data.writerConnected===false)throw new ReceptionError('pairing-pending');return relayJobs(data.jobs,this.app.vault.configDir).length;}
 
     const token=this.app.secretStorage?.getSecret(this.settings.secret);
     if(!token)throw Error('Vincula un secreto de GitHub en este dispositivo.');
@@ -368,6 +392,7 @@ class InboxSettings extends PluginSettingTab {
       {name:'Importar solicitudes',desc:'Solo crea notas nuevas en el ámbito autorizado. Obsidian debe estar abierto.',render:row=>{row.addToggle(t=>t.setValue(p.settings.enabled).onChange(async value=>{p.settings.enabled=value;await p.persist();}));}},
       {name:'Permitir edición y papelera',desc:'Solo por GitHub y con huella de la versión anterior. Guarda copias recuperables.',visible:()=>p.settings.transport==='github',render:row=>{row.addToggle(t=>t.setValue(p.settings.allowChanges).onChange(async value=>{p.settings.allowChanges=value;await p.permissionsChanged();}));}},
       {name:'Permitir fotos y archivos',desc:'Solo por GitHub. Hasta 20 MiB y 32 archivos por solicitud; no sobrescribe destinos distintos.',visible:()=>p.settings.transport==='github',render:row=>{row.addToggle(t=>t.setValue(p.settings.allowAttachments).onChange(async value=>{p.settings.allowAttachments=value;await p.permissionsChanged();}));}},
+      {name:'Permitir lectura de notas',desc:'Solo por relay y desactivado por defecto. ChatGPT puede solicitar notas de las carpetas autorizadas; el contenido vuelve por el relay autenticado.',visible:()=>p.settings.transport==='relay',render:row=>{row.addToggle(t=>t.setValue(p.settings.allowRead).onChange(async value=>{p.settings.allowRead=value;await p.permissionsChanged();}));}},
       {name:'Repositorio GitHub',visible:()=>p.settings.transport==='github',render:row=>{row.addText(t=>t.setPlaceholder('usuario/mi-inbox').setValue(p.settings.repository).onChange(async value=>{p.settings.repository=value.trim();await p.persist();}));}},
       {name:'Rama',visible:()=>p.settings.transport==='github',render:row=>{row.addText(t=>t.setValue(p.settings.branch).onChange(async value=>{p.settings.branch=value.trim();await p.persist();}));}},
       {name:'Token de solo lectura',desc:'Solo este repositorio, Contents: Read-only. Se configura por dispositivo.',visible:()=>p.settings.transport==='github',render:row=>{row.addComponent(c=>new SecretComponent(this.app,c).setValue(p.settings.secret).onChange(async value=>{await p.selectGithubSecret(value);}));}},
